@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Everest CRM — Everest Horizons Roofing</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="crm.css">
+</head>
+<body>
+  <!-- LOGIN OVERLAY -->
+  <div id="loginOverlay">
+    <div class="login-card">
+      <div class="login-logo">Everest CRM</div>
+      <form id="loginForm">
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="loginUsername" required autocomplete="username" placeholder="Enter username">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="Enter password">
+        </div>
+        <div id="loginError" class="error-msg"></div>
+        <button type="submit" class="btn-primary" style="width: 100%;">Log In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN APP -->
+  <div id="app" style="display: none;">
+    <!-- SIDEBAR -->
+    <button id="mobileMenuBtn" class="mobile-only"><i class="fas fa-bars"></i></button>
+    <div id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">Everest CRM</div>
+        <button id="closeSidebarBtn" class="mobile-only"><i class="fas fa-times"></i></button>
+      </div>
+
+      <nav id="mainNav">
+        <button class="nav-item active" data-section="tickets">
+          <i class="fas fa-ticket"></i> <span>Tasks</span>
+        </button>
+        <button class="nav-item" data-section="leads">
+          <i class="fas fa-inbox"></i> <span>Leads</span>
+          <span id="websiteLeadsBadge" class="nav-badge" style="display:none;"></span>
+        </button>
+        <button class="nav-item" data-section="clients">
+          <i class="fas fa-users"></i> <span>Potential Clients</span>
+        </button>
+        <button class="nav-item" data-section="builds">
+          <i class="fas fa-hard-hat"></i> <span>Active Builds</span>
+        </button>
+        <button class="nav-item" data-section="pastbuilds">
+          <i class="fas fa-folder-open"></i> <span>Past Builds</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="btnLogout" class="nav-item"><i class="fas fa-sign-out-alt"></i> <span>Logout</span></button>
+      </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="mainContent">
+      
+      <!-- LEADS SECTION -->
+      <div id="section-leads" class="section" style="display: none;">
+        <div class="section-header">
+          <h2>Leads</h2>
+          <button id="btnAddLead" class="btn-primary">+ Add Lead</button>
+        </div>
+        <div class="filter-bar">
+          <select id="filterLeadSource">
+            <option value="All">All Sources</option>
+            <option value="Messenger">Messenger</option>
+            <option value="Instagram">Instagram</option>
+            <option value="Call/Text">Call/Text</option>
+            <option value="Website">Website</option>
+          </select>
+          <select id="filterLeadStatus">
+            <option value="All">All Statuses</option>
+            <option value="New">New</option>
+            <option value="Contacted">Contacted</option>
+            <option value="Estimate Sent">Estimate Sent</option>
+            <option value="Follow-up">Follow-up</option>
+          </select>
+          <input type="text" id="searchLeads" placeholder="Search leads...">
+        </div>
+        <div class="table-responsive">
+          <table id="leadsTable" class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th>Date</th>
+                <th>Notes</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- CLIENTS SECTION (List View) -->
+      <div id="section-clients" class="section" style="display: none;">
+        <div class="section-header">
+          <h2>Potential Clients</h2>
+          <button id="btnAddClient" class="btn-primary">+ Add Client</button>
+        </div>
+        <div class="filter-bar">
+          <select id="filterClientStatus">
+            <option value="All">All Statuses</option>
+            <option value="Next Year">Next Year</option>
+            <option value="Waiting - Financing">Waiting - Financing</option>
+            <option value="Waiting - HOA">Waiting - HOA</option>
+            <option value="Waiting - Other">Waiting - Other</option>
+          </select>
+          <input type="text" id="searchClients" placeholder="Search clients...">
+        </div>
+        <div class="table-responsive sn-table-wrap">
+          <table id="clientsTable" class="data-table sn-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Address</th>
+                <th>Status</th>
+                <th>Est. Value</th>
+                <th>Notes</th>
+                <th style="width: 110px; text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- BUILDS SECTION (List View) -->
+      <div id="section-builds" class="section" style="display: none;">
+        <div class="section-header">
+          <h2>Active Builds</h2>
+          <button id="btnAddBuild" class="btn-primary">+ Add Build</button>
+        </div>
+        <div class="filter-bar">
+          <select id="filterBuildStatus">
+            <option value="All">All Statuses</option>
+            <option value="Just Started">Just Started</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Completed">Completed</option>
+          </select>
+          <input type="text" id="searchBuilds" placeholder="Search builds...">
+        </div>
+        <div class="table-responsive sn-table-wrap">
+          <table id="buildsTable" class="data-table sn-table">
+            <thead>
+              <tr>
+                <th>Client Name</th>
+                <th>Address</th>
+                <th>Material</th>
+                <th>Status</th>
+                <th>Start Date</th>
+                <th>Est. Completion</th>
+                <th>Notes</th>
+                <th style="width: 110px; text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- PAST BUILDS SECTION -->
+      <div id="section-pastbuilds" class="section" style="display: none;">
+        <div class="section-header">
+          <h2>Past Builds</h2>
+          <div class="header-actions">
+            <button id="btnAddPastBuild" class="btn-primary">+ Add Past Build</button>
+            <button id="btnExportPastBuilds" class="btn-secondary"><i class="fas fa-file-csv"></i> Export CSV</button>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <input type="text" id="searchPastBuilds" placeholder="Search past builds...">
+        </div>
+        <div class="table-responsive">
+          <table id="pastBuildsTable" class="data-table">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Address</th>
+                <th>Material</th>
+                <th>Start Date</th>
+                <th>End Date</th>
+                <th>Final Value</th>
+                <th>Notes</th>
+                <th style="width: 80px; text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TICKETS / TASKS SECTION (Simplified List View) -->
+      <div id="section-tickets" class="section active" style="display: block;">
+        <div class="section-header">
+          <h2>Tasks</h2>
+          <button id="btnAddTicket" class="btn-primary">+ New Task</button>
+        </div>
+        <div class="filter-bar">
+          <select id="filterTicketStatus">
+            <option value="All">All States</option>
+            <option value="Pending">Pending</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Completed">Completed</option>
+          </select>
+          <select id="filterTicketAssignee">
+            <option value="All">All Assignees</option>
+            <option value="KN">KN</option>
+            <option value="AK">AK</option>
+            <option value="Unassigned">Unassigned</option>
+          </select>
+          <input type="text" id="searchTickets" placeholder="Search tasks...">
+        </div>
+
+        <div class="table-responsive sn-table-wrap">
+          <table id="ticketsTable" class="data-table sn-table">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th style="width: 150px;">State</th>
+                <th style="width: 140px;">Assigned to</th>
+                <th style="width: 100px; text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ticketsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODALS -->
+  <!-- Lead Modal -->
+  <div id="modalLead" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalLeadTitle">Add Lead</h3>
+        <button class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="formLead">
+        <input type="hidden" id="leadId">
+        <div class="form-grid">
+          <div class="form-group"><label>Name*</label><input type="text" id="leadName" required></div>
+          <div class="form-group"><label>Phone</label><input type="text" id="leadPhone"></div>
+          <div class="form-group"><label>Email</label><input type="email" id="leadEmail"></div>
+          <div class="form-group"><label>Address</label><input type="text" id="leadAddress"></div>
+          <div class="form-group">
+            <label>Source*</label>
+            <select id="leadSource" required>
+              <option value="Messenger">Messenger</option>
+              <option value="Instagram">Instagram</option>
+              <option value="Call/Text">Call/Text</option>
+              <option value="Website">Website</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Status*</label>
+            <select id="leadStatus" required>
+              <option value="New">New</option>
+              <option value="Contacted">Contacted</option>
+              <option value="Estimate Sent">Estimate Sent</option>
+              <option value="Follow-up">Follow-up</option>
+            </select>
+          </div>
+          <div class="form-group full-width"><label>Notes</label><textarea id="leadNotes" rows="3"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Save Lead</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Client Modal -->
+  <div id="modalClient" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalClientTitle">Add Client</h3>
+        <button class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="formClient">
+        <input type="hidden" id="clientId">
+        <div class="form-grid">
+          <div class="form-group"><label>Name*</label><input type="text" id="clientName" required></div>
+          <div class="form-group"><label>Phone</label><input type="text" id="clientPhone"></div>
+          <div class="form-group"><label>Email</label><input type="email" id="clientEmail"></div>
+          <div class="form-group"><label>Address</label><input type="text" id="clientAddress"></div>
+          <div class="form-group">
+            <label>Status*</label>
+            <select id="clientStatus" required>
+              <option value="Next Year">Next Year</option>
+              <option value="Waiting - Financing">Waiting - Financing</option>
+              <option value="Waiting - HOA">Waiting - HOA</option>
+              <option value="Waiting - Other">Waiting - Other</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Est. Value ($)</label><input type="number" id="clientEstValue"></div>
+          <div class="form-group"><label>Last Contact</label><input type="date" id="clientLastContact"></div>
+          <div class="form-group full-width"><label>Notes</label><textarea id="clientNotes" rows="3"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Save Client</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Build Modal -->
+  <div id="modalBuild" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalBuildTitle">Add Build</h3>
+        <button class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="formBuild">
+        <input type="hidden" id="buildId">
+        <div class="form-grid">
+          <div class="form-group"><label>Client Name*</label><input type="text" id="buildClientName" required></div>
+          <div class="form-group"><label>Address*</label><input type="text" id="buildAddress" required></div>
+          <div class="form-group"><label>Material</label><input type="text" id="buildMaterial"></div>
+          <div class="form-group">
+            <label>Status*</label>
+            <select id="buildStatus" required>
+              <option value="Just Started">Just Started</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Start Date</label><input type="date" id="buildStartDate"></div>
+          <div class="form-group"><label>Est. Completion</label><input type="date" id="buildEstCompletion"></div>
+          <div class="form-group"><label>Crew</label><input type="text" id="buildCrew"></div>
+          <div class="form-group" id="buildFinalValueGroup" style="display: none;"><label>Final Value ($)</label><input type="number" id="buildFinalValue"></div>
+          <div class="form-group full-width"><label>Notes</label><textarea id="buildNotes" rows="3"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Save Build</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Task Modal -->
+  <div id="modalTicket" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalTicketTitle">Task</h3>
+        <button class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="formTicket">
+        <input type="hidden" id="ticketId">
+        <div class="form-group">
+          <label>Description*</label>
+          <textarea id="ticketDescription" rows="4" required placeholder="Enter task description..."></textarea>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>State*</label>
+            <select id="ticketStatus" required>
+              <option value="Pending">Pending</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Assigned to*</label>
+            <select id="ticketAssignee" required>
+              <option value="Unassigned">Unassigned</option>
+              <option value="KN">KN</option>
+              <option value="AK">AK</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+          <button type="button" id="btnDeleteTicketModal" class="btn-danger" style="display: none;"><i class="fas fa-trash"></i> Delete Task</button>
+          <div style="display: flex; gap: 10px; margin-left: auto;">
+            <button type="button" class="btn-secondary modal-cancel">Cancel</button>
+            <button type="submit" class="btn-primary">Save Task</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Vault Entry Modal -->
+  <div id="modalVaultEntry" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalVaultTitle">Add Vault Entry</h3>
+        <button class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="formVaultEntry">
+        <input type="hidden" id="vaultId">
+        <div class="form-grid">
+          <div class="form-group"><label>Service Name*</label><input type="text" id="vaultService" required></div>
+          <div class="form-group"><label>Icon (Emoji)</label><input type="text" id="vaultIcon" placeholder="e.g. 📧" value="🔑"></div>
+          <div class="form-group"><label>URL</label><input type="url" id="vaultUrl"></div>
+          <div class="form-group"><label>Username</label><input type="text" id="vaultUsername"></div>
+          <div class="form-group"><label>Email</label><input type="email" id="vaultEmail"></div>
+          <div class="form-group">
+            <label>Password</label>
+            <div style="display:flex;">
+              <input type="password" id="vaultPassword" style="flex:1;">
+              <button type="button" id="btnToggleVaultPwd" class="btn-secondary" style="margin-left:5px;"><i class="fas fa-eye"></i></button>
+            </div>
+          </div>
+          <div class="form-group full-width"><label>Notes</label><textarea id="vaultNotes" rows="2"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Save Entry</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Past Build Modal -->
+  <div id="modalPastBuild" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalPastBuildTitle">Add Past Build</h3>
+        <button class="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="formPastBuild">
+        <input type="hidden" id="pastBuildId">
+        <div class="form-grid">
+          <div class="form-group"><label>Client Name*</label><input type="text" id="pastClientName" required></div>
+          <div class="form-group"><label>Address*</label><input type="text" id="pastAddress" required></div>
+          <div class="form-group"><label>Material</label><input type="text" id="pastMaterial" placeholder="e.g. Architectural Shingles"></div>
+          <div class="form-group"><label>Start Date</label><input type="date" id="pastStartDate"></div>
+          <div class="form-group"><label>End Date</label><input type="date" id="pastEndDate"></div>
+          <div class="form-group"><label>Final Value ($)</label><input type="number" id="pastFinalValue" placeholder="e.g. 15000"></div>
+          <div class="form-group full-width"><label>Notes</label><textarea id="pastNotes" rows="2"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Save Past Build</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TICKET DRAWER -->
+  <div id="ticketDrawer" class="drawer">
+    <div class="drawer-header">
+      <h3 id="drawerTicketTitle">Ticket Title</h3>
+      <button id="ticketDrawerClose"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="drawer-content">
+      <div class="drawer-meta">
+        <div class="meta-item">
+          <label>Status</label>
+          <select id="drawerStatus"></select>
+        </div>
+        <div class="meta-item">
+          <label>Assignee</label>
+          <select id="drawerAssignee"></select>
+        </div>
+        <div class="meta-item">
+          <label>Priority</label>
+          <span id="drawerPriority"></span>
+        </div>
+        <div class="meta-item">
+          <label>Due Date</label>
+          <span id="drawerDueDate"></span>
+        </div>
+      </div>
+      <div class="drawer-section">
+        <h4>Description</h4>
+        <p id="drawerDescription"></p>
+      </div>
+      <div class="drawer-section">
+        <h4>History</h4>
+        <ul id="drawerHistory" class="history-list"></ul>
+      </div>
+      <div class="drawer-section">
+        <h4>Comments</h4>
+        <div id="drawerComments" class="comments-list"></div>
+        <div class="comment-input-area">
+          <textarea id="drawerCommentInput" rows="2" placeholder="Write a comment..."></textarea>
+          <button id="btnPostComment" class="btn-primary">Post</button>
+        </div>
+      </div>
+      <div class="drawer-section" style="border-top: 1px solid var(--border); padding-top: 15px; margin-top: 20px;">
+        <button id="btnDeleteTicketDrawer" class="btn-danger" style="width: 100%;"><i class="fas fa-trash"></i> Delete Task</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div id="toastContainer"></div>
+
+  <script src="crm.js"></script>
+</body>
+</html>
