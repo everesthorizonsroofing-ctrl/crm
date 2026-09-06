@@ -93,6 +93,8 @@ function updateCloudIndicator(status, text) {
   const ind = document.getElementById('cloudIndicator');
   const detail = document.getElementById('cloudStatusDetail');
   const textEl = document.getElementById('cloudStatusText');
+  const connectedView = document.getElementById('cloudConnectedView');
+  const configFields = document.getElementById('cloudConfigFields');
 
   [ind, detail].forEach(el => {
     if (!el) return;
@@ -105,6 +107,15 @@ function updateCloudIndicator(status, text) {
     if (label) label.textContent = text;
   }
   if (textEl) textEl.textContent = text;
+
+  // When connected, show the clean Connected badge and hide raw credential inputs
+  if (status === 'connected') {
+    if (connectedView) connectedView.style.display = 'block';
+    if (configFields) configFields.style.display = 'none';
+  } else {
+    if (connectedView) connectedView.style.display = 'none';
+    if (configFields) configFields.style.display = 'flex';
+  }
 }
 
 function mapItemToDb(tableName, item) {
@@ -2157,6 +2168,20 @@ document.getElementById('btnDisconnectSupabase')?.addEventListener('click', () =
   document.getElementById('cfgSupabaseKey').value = '';
   updateCloudIndicator('offline', 'Local Mode');
   showToast('Disconnected from Supabase Cloud');
+});
+
+// Force Cloud Sync & Settings Toggle
+document.getElementById('btnForceSync')?.addEventListener('click', async () => {
+  showToast('Syncing with Supabase Cloud...');
+  await pullAllFromCloud();
+  showToast('All CRM tables up to date!');
+});
+
+document.getElementById('btnToggleConfigFields')?.addEventListener('click', () => {
+  const fields = document.getElementById('cloudConfigFields');
+  if (fields) {
+    fields.style.display = fields.style.display === 'none' ? 'flex' : 'none';
+  }
 });
 
 // Backup & Sync Modal Bindings
