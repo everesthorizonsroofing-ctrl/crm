@@ -348,7 +348,125 @@ function getVaultEntries() {
 }
 
 /* ==========================================================================
-   5. RENDER & CRUD LOGIC
+   5. BULK SELECTION & ACTION MANAGER
+   ========================================================================== */
+const SELECTED_ITEMS = {
+  leads: new Set(),
+  clients: new Set(),
+  builds: new Set(),
+  pastBuilds: new Set(),
+  tickets: new Set()
+};
+
+function updateBulkBar(entity) {
+  const set = SELECTED_ITEMS[entity];
+  const bar = document.getElementById(`bulkBar-${entity}`);
+  if (bar) {
+    if (set.size > 0) {
+      bar.style.display = 'inline-flex';
+      const countEl = bar.querySelector('.bulk-count');
+      if (countEl) countEl.innerText = `${set.size} selected`;
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+
+  // Update header checkbox
+  const allCb = document.querySelector(`.cb-select-all[data-entity="${entity}"]`);
+  const rowCbs = document.querySelectorAll(`.cb-row[data-entity="${entity}"]`);
+  if (allCb && rowCbs.length > 0) {
+    const allChecked = Array.from(rowCbs).every(cb => cb.checked);
+    allCb.checked = allChecked;
+    allCb.indeterminate = !allChecked && set.size > 0;
+  } else if (allCb) {
+    allCb.checked = false;
+    allCb.indeterminate = false;
+  }
+}
+
+window.toggleSelectAll = function(entity, isCheckedOrEvent) {
+  // If any items are currently selected, clicking the top tick deselects all.
+  // If no items are selected, clicking it selects all.
+  const hasSelected = SELECTED_ITEMS[entity].size > 0;
+  const targetCheck = (typeof isCheckedOrEvent === 'boolean') ? isCheckedOrEvent : !hasSelected;
+
+  const allCb = document.querySelector(`.cb-select-all[data-entity="${entity}"]`);
+  if (allCb) {
+    allCb.checked = targetCheck;
+    allCb.indeterminate = false;
+  }
+
+  const rowCbs = document.querySelectorAll(`.cb-row[data-entity="${entity}"]`);
+  rowCbs.forEach(cb => {
+    cb.checked = targetCheck;
+    const id = cb.dataset.id;
+    const tr = cb.closest('tr');
+    if (targetCheck) {
+      SELECTED_ITEMS[entity].add(id);
+      tr?.classList.add('row-selected');
+    } else {
+      SELECTED_ITEMS[entity].delete(id);
+      tr?.classList.remove('row-selected');
+    }
+  });
+  updateBulkBar(entity);
+};
+
+window.onRowSelectChange = function(entity) {
+  const set = SELECTED_ITEMS[entity];
+  set.clear();
+  const rowCbs = document.querySelectorAll(`.cb-row[data-entity="${entity}"]`);
+  rowCbs.forEach(cb => {
+    const tr = cb.closest('tr');
+    if (cb.checked) {
+      set.add(cb.dataset.id);
+      tr?.classList.add('row-selected');
+    } else {
+      tr?.classList.remove('row-selected');
+    }
+  });
+  updateBulkBar(entity);
+};
+
+window.deselectAll = function(entity) {
+  SELECTED_ITEMS[entity].clear();
+  const rowCbs = document.querySelectorAll(`.cb-row[data-entity="${entity}"]`);
+  rowCbs.forEach(cb => {
+    cb.checked = false;
+    cb.closest('tr')?.classList.remove('row-selected');
+  });
+  const allCb = document.querySelector(`.cb-select-all[data-entity="${entity}"]`);
+  if (allCb) {
+    allCb.checked = false;
+    allCb.indeterminate = false;
+  }
+  updateBulkBar(entity);
+};
+
+window.bulkDelete = function(entity) {
+  const set = SELECTED_ITEMS[entity];
+  if (set.size === 0) return;
+  const count = set.size;
+  if (!confirm(`Are you sure you want to delete ${count} selected item(s)?`)) return;
+
+  const storageKey = entity;
+  let items = getData(storageKey);
+  items = items.filter(item => !set.has(item.id));
+  setData(storageKey, items);
+  set.clear();
+  updateBulkBar(entity);
+
+  if (entity === 'leads') renderLeads();
+  else if (entity === 'clients') renderClients();
+  else if (entity === 'builds') renderBuilds();
+  else if (entity === 'pastBuilds') renderPastBuilds();
+  else if (entity === 'tickets') renderTickets();
+
+  showToast(`${count} item(s) deleted`);
+};
+
+/* ==========================================================================
+   6. RENDER & CRUD LOGIC
    ========================================================================== */
 
 // --- LEADS ---
@@ -369,13 +487,18 @@ function renderLeads() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No leads found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;">No leads found.</td></tr>`;
+    updateBulkBar('leads');
     return;
   }
 
   filtered.forEach(lead => {
     const tr = document.createElement('tr');
+    if (SELECTED_ITEMS.leads.has(lead.id)) tr.classList.add('row-selected');
     tr.innerHTML = `
+      <td style="text-align: center;" onclick="event.stopPropagation();">
+        <input type="checkbox" class="cb-row" data-entity="leads" data-id="${lead.id}" ${SELECTED_ITEMS.leads.has(lead.id) ? 'checked' : ''} onchange="onRowSelectChange('leads')">
+      </td>
       <td><strong>${lead.name}</strong><br><small>${lead.email||''}</small></td>
       <td>${formatPhoneNumber(lead.phone)}</td>
       <td><span class="badge badge-${lead.source.toLowerCase().replace('/','')}">${lead.source}</span></td>
@@ -386,12 +509,13 @@ function renderLeads() {
         <div class="actions">
           <button class="btn-secondary btn-sm" onclick="editLead('${lead.id}')" title="Edit"><i class="fas fa-edit"></i></button>
           <button class="btn-primary btn-sm" onclick="promoteLead('${lead.id}')" title="Promote to Client"><i class="fas fa-level-up-alt"></i></button>
-          <button class="btn-danger btn-sm" onclick="archiveLead('${lead.id}')" title="Archive"><i class="fas fa-archive"></i></button>
+          <button class="btn-icon-danger" onclick="deleteLead('${lead.id}')" title="Delete"><i class="fas fa-trash"></i></button>
         </div>
       </td>
     `;
     tbody.appendChild(tr);
   });
+  updateBulkBar('leads');
 }
 
 window.editLead = function(id) {
@@ -409,12 +533,15 @@ window.editLead = function(id) {
   openModal('modalLead');
 }
 
-window.archiveLead = function(id) {
-  if(!confirm('Archive this lead?')) return;
-  const leads = getData('leads');
-  const lead = leads.find(l => l.id === id);
-  if(lead) { lead.archived = true; setData('leads', leads); renderLeads(); showToast('Lead archived'); }
-}
+window.deleteLead = function(id) {
+  if (!confirm('Are you sure you want to delete this lead?')) return;
+  const leads = getData('leads').filter(l => l.id !== id);
+  setData('leads', leads);
+  SELECTED_ITEMS.leads.delete(id);
+  renderLeads();
+  showToast('Lead deleted');
+};
+window.archiveLead = window.deleteLead;
 
 window.promoteLead = function(id) {
   if(!confirm('Promote lead to Potential Client?')) return;
@@ -453,13 +580,18 @@ function renderClients() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 25px; color: #64748b;">No potential clients found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 25px; color: #64748b;">No potential clients found.</td></tr>`;
+    updateBulkBar('clients');
     return;
   }
 
   filtered.forEach(c => {
     const tr = document.createElement('tr');
+    if (SELECTED_ITEMS.clients.has(c.id)) tr.classList.add('row-selected');
     tr.innerHTML = `
+      <td style="text-align: center;" onclick="event.stopPropagation();">
+        <input type="checkbox" class="cb-row" data-entity="clients" data-id="${c.id}" ${SELECTED_ITEMS.clients.has(c.id) ? 'checked' : ''} onchange="onRowSelectChange('clients')">
+      </td>
       <td><strong>${c.name}</strong>${c.email ? `<br><small style="color:#64748b;">${c.email}</small>` : ''}</td>
       <td>${formatPhoneNumber(c.phone)}</td>
       <td>${c.address || '-'}</td>
@@ -476,6 +608,7 @@ function renderClients() {
     `;
     tbody.appendChild(tr);
   });
+  updateBulkBar('clients');
 }
 
 window.deleteClient = function(id) {
@@ -536,13 +669,18 @@ function renderBuilds() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 25px; color: #64748b;">No active builds found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding: 25px; color: #64748b;">No active builds found.</td></tr>`;
+    updateBulkBar('builds');
     return;
   }
 
   filtered.forEach(b => {
     const tr = document.createElement('tr');
+    if (SELECTED_ITEMS.builds.has(b.id)) tr.classList.add('row-selected');
     tr.innerHTML = `
+      <td style="text-align: center;" onclick="event.stopPropagation();">
+        <input type="checkbox" class="cb-row" data-entity="builds" data-id="${b.id}" ${SELECTED_ITEMS.builds.has(b.id) ? 'checked' : ''} onchange="onRowSelectChange('builds')">
+      </td>
       <td><strong>${b.clientName}</strong></td>
       <td>${b.address}</td>
       <td>${b.material || '-'}</td>
@@ -559,6 +697,7 @@ function renderBuilds() {
     `;
     tbody.appendChild(tr);
   });
+  updateBulkBar('builds');
 }
 
 window.deleteBuild = function(id) {
@@ -611,13 +750,18 @@ function renderPastBuilds() {
   const filtered = past.filter(p => !search || p.clientName.toLowerCase().includes(search) || p.address.toLowerCase().includes(search));
   
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;">No past builds found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;">No past builds found.</td></tr>`;
+    updateBulkBar('pastBuilds');
     return;
   }
 
   filtered.forEach(p => {
     const tr = document.createElement('tr');
+    if (SELECTED_ITEMS.pastBuilds.has(p.id)) tr.classList.add('row-selected');
     tr.innerHTML = `
+      <td style="text-align: center;" onclick="event.stopPropagation();">
+        <input type="checkbox" class="cb-row" data-entity="pastBuilds" data-id="${p.id}" ${SELECTED_ITEMS.pastBuilds.has(p.id) ? 'checked' : ''} onchange="onRowSelectChange('pastBuilds')">
+      </td>
       <td><strong>${p.clientName}</strong></td>
       <td>${p.address}</td>
       <td>${p.material || '-'}</td>
@@ -633,6 +777,7 @@ function renderPastBuilds() {
     `;
     tbody.appendChild(tr);
   });
+  updateBulkBar('pastBuilds');
 }
 
 window.deletePastBuild = function(id) {
@@ -643,30 +788,219 @@ window.deletePastBuild = function(id) {
   showToast('Past build removed');
 };
 
-document.getElementById('btnExportPastBuilds').addEventListener('click', () => {
-  const past = getData('pastBuilds');
-  if(past.length === 0) { showToast('No data to export', 'error'); return; }
-  
-  const headers = ['Client Name', 'Address', 'Material', 'Start Date', 'End Date', 'Final Value', 'Notes'];
+/* ==========================================================================
+   CSV EXPORT UTILITIES & HANDLERS (Tasks, Leads, Clients, Builds, Past Builds)
+   ========================================================================== */
+function formatCSVDate(val) {
+  if (!val) return '';
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return String(val);
+  return d.toLocaleDateString();
+}
+
+function downloadCSV(filename, headers, rows) {
+  if (!rows || rows.length === 0) {
+    showToast('No data to export', 'error');
+    return false;
+  }
   const csvContent = [
-    headers.join(','),
-    ...past.map(p => [
-      `"${(p.clientName||'').replace(/"/g, '""')}"`,
-      `"${(p.address||'').replace(/"/g, '""')}"`,
-      `"${(p.material||'').replace(/"/g, '""')}"`,
-      p.startDate, p.endDate, p.finalValue,
-      `"${(p.notes||'').replace(/"/g, '""')}"`
-    ].join(','))
-  ].join('\n');
-  
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    headers.map(h => `"${String(h || '').replace(/"/g, '""')}"`).join(','),
+    ...rows.map(row =>
+      row.map(val => {
+        if (val === null || val === undefined) return '""';
+        return `"${String(val).replace(/"/g, '""')}"`;
+      }).join(',')
+    )
+  ].join('\r\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.setAttribute('href', url);
-  link.setAttribute('download', 'Past_Builds_Export.csv');
+  link.setAttribute('download', filename);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+}
+
+// 1. Leads CSV Export
+document.getElementById('btnExportLeads')?.addEventListener('click', () => {
+  const leads = getData('leads').filter(l => !l.archived);
+  const isSelective = SELECTED_ITEMS.leads && SELECTED_ITEMS.leads.size > 0;
+  const list = isSelective
+    ? leads.filter(l => SELECTED_ITEMS.leads.has(l.id))
+    : leads.filter(l => {
+        const srcFilter = document.getElementById('filterLeadSource')?.value || 'All';
+        const statFilter = document.getElementById('filterLeadStatus')?.value || 'All';
+        const search = (document.getElementById('searchLeads')?.value || '').toLowerCase();
+        if (srcFilter !== 'All' && l.source !== srcFilter) return false;
+        if (statFilter !== 'All' && l.status !== statFilter) return false;
+        if (search && !(l.name || '').toLowerCase().includes(search) && !(l.phone || '').includes(search)) return false;
+        return true;
+      });
+
+  if (list.length === 0) {
+    showToast('No leads to export', 'error');
+    return;
+  }
+
+  const headers = ['Name', 'Phone', 'Email', 'Address', 'Source', 'Status', 'Date Added', 'Notes'];
+  const rows = list.map(l => [
+    l.name || '',
+    formatPhoneNumber(l.phone),
+    l.email || '',
+    l.address || '',
+    l.source || '',
+    l.status || '',
+    formatCSVDate(l.dateAdded),
+    l.notes || ''
+  ]);
+
+  if (downloadCSV('Everest_Leads_Export.csv', headers, rows)) {
+    showToast(isSelective ? `Exported ${list.length} selected lead(s)` : `Exported ${list.length} lead(s) to CSV`);
+  }
+});
+
+// 2. Potential Clients CSV Export
+document.getElementById('btnExportClients')?.addEventListener('click', () => {
+  const clients = getData('clients');
+  const isSelective = SELECTED_ITEMS.clients && SELECTED_ITEMS.clients.size > 0;
+  const list = isSelective
+    ? clients.filter(c => SELECTED_ITEMS.clients.has(c.id))
+    : clients.filter(c => {
+        const statFilter = document.getElementById('filterClientStatus')?.value || 'All';
+        const search = (document.getElementById('searchClients')?.value || '').toLowerCase();
+        if (statFilter !== 'All' && c.status !== statFilter) return false;
+        if (search && !(c.name || '').toLowerCase().includes(search) && !(c.phone || '').includes(search) && !(c.address || '').toLowerCase().includes(search)) return false;
+        return true;
+      });
+
+  if (list.length === 0) {
+    showToast('No clients to export', 'error');
+    return;
+  }
+
+  const headers = ['Name', 'Phone', 'Email', 'Address', 'Status', 'Est. Value', 'Notes'];
+  const rows = list.map(c => [
+    c.name || '',
+    formatPhoneNumber(c.phone),
+    c.email || '',
+    c.address || '',
+    c.status || '',
+    c.estValue ? ('$' + c.estValue) : '',
+    c.notes || ''
+  ]);
+
+  if (downloadCSV('Everest_Clients_Export.csv', headers, rows)) {
+    showToast(isSelective ? `Exported ${list.length} selected client(s)` : `Exported ${list.length} client(s) to CSV`);
+  }
+});
+
+// 3. Active Builds CSV Export
+document.getElementById('btnExportBuilds')?.addEventListener('click', () => {
+  const builds = getData('builds');
+  const isSelective = SELECTED_ITEMS.builds && SELECTED_ITEMS.builds.size > 0;
+  const list = isSelective
+    ? builds.filter(b => SELECTED_ITEMS.builds.has(b.id))
+    : builds.filter(b => {
+        const statFilter = document.getElementById('filterBuildStatus')?.value || 'All';
+        const search = (document.getElementById('searchBuilds')?.value || '').toLowerCase();
+        if (statFilter !== 'All' && b.status !== statFilter) return false;
+        if (search && !(b.clientName || '').toLowerCase().includes(search) && !(b.address || '').toLowerCase().includes(search)) return false;
+        return true;
+      });
+
+  if (list.length === 0) {
+    showToast('No builds to export', 'error');
+    return;
+  }
+
+  const headers = ['Client Name', 'Address', 'Material', 'Status', 'Start Date', 'Est. Completion', 'Crew', 'Notes'];
+  const rows = list.map(b => [
+    b.clientName || '',
+    b.address || '',
+    b.material || '',
+    b.status || '',
+    formatCSVDate(b.startDate),
+    formatCSVDate(b.estCompletion),
+    b.crew || '',
+    b.notes || ''
+  ]);
+
+  if (downloadCSV('Everest_Active_Builds_Export.csv', headers, rows)) {
+    showToast(isSelective ? `Exported ${list.length} selected build(s)` : `Exported ${list.length} build(s) to CSV`);
+  }
+});
+
+// 4. Past Builds CSV Export
+document.getElementById('btnExportPastBuilds')?.addEventListener('click', () => {
+  const past = getData('pastBuilds');
+  const isSelective = SELECTED_ITEMS.pastBuilds && SELECTED_ITEMS.pastBuilds.size > 0;
+  const list = isSelective
+    ? past.filter(p => SELECTED_ITEMS.pastBuilds.has(p.id))
+    : past.filter(p => {
+        const search = (document.getElementById('searchPastBuilds')?.value || '').toLowerCase();
+        if (search && !(p.clientName || '').toLowerCase().includes(search) && !(p.address || '').toLowerCase().includes(search) && !(p.material || '').toLowerCase().includes(search)) return false;
+        return true;
+      });
+
+  if (list.length === 0) {
+    showToast('No past builds to export', 'error');
+    return;
+  }
+
+  const headers = ['Client Name', 'Address', 'Material', 'Start Date', 'End Date', 'Final Value', 'Notes'];
+  const rows = list.map(p => [
+    p.clientName || '',
+    p.address || '',
+    p.material || '',
+    formatCSVDate(p.startDate),
+    formatCSVDate(p.endDate),
+    p.finalValue ? ('$' + p.finalValue) : '',
+    p.notes || ''
+  ]);
+
+  if (downloadCSV('Everest_Past_Builds_Export.csv', headers, rows)) {
+    showToast(isSelective ? `Exported ${list.length} selected past build(s)` : `Exported ${list.length} past build(s) to CSV`);
+  }
+});
+
+// 5. Tasks CSV Export
+document.getElementById('btnExportTickets')?.addEventListener('click', () => {
+  const tickets = getData('tickets');
+  const isSelective = SELECTED_ITEMS.tickets && SELECTED_ITEMS.tickets.size > 0;
+  const list = isSelective
+    ? tickets.filter(t => SELECTED_ITEMS.tickets.has(t.id))
+    : tickets.filter(t => {
+        const assignee = document.getElementById('filterTicketAssignee')?.value || 'All';
+        const status = document.getElementById('filterTicketStatus')?.value || 'All';
+        const search = (document.getElementById('searchTickets')?.value || '').toLowerCase();
+        const normStatus = normalizeTaskStatus(t.status);
+        if (assignee !== 'All' && t.assignee !== assignee) return false;
+        if (status !== 'All' && normStatus !== status) return false;
+        const desc = (t.description || t.title || '').toLowerCase();
+        if (search && !desc.includes(search)) return false;
+        return true;
+      });
+
+  if (list.length === 0) {
+    showToast('No tasks to export', 'error');
+    return;
+  }
+
+  const headers = ['Description', 'State', 'Assigned To', 'Date Created'];
+  const rows = list.map(t => [
+    t.description || t.title || 'Untitled Task',
+    normalizeTaskStatus(t.status),
+    t.assignee && t.assignee !== 'Unassigned' ? t.assignee : 'Unassigned',
+    formatCSVDate(t.createdAt)
+  ]);
+
+  if (downloadCSV('Everest_Tasks_Export.csv', headers, rows)) {
+    showToast(isSelective ? `Exported ${list.length} selected task(s)` : `Exported ${list.length} task(s) to CSV`);
+  }
 });
 
 // --- TASKS (List View: Description, State, Assigned to) ---
@@ -682,6 +1016,7 @@ const INITIAL_TICKETS = [
 ];
 
 function seedInitialTickets() {
+  if (localStorage.getItem('crm_tickets_seeded')) return;
   const tickets = INITIAL_TICKETS.map(t => ({
     id: generateId(),
     description: t.description,
@@ -690,6 +1025,7 @@ function seedInitialTickets() {
     createdAt: new Date().toISOString(),
   }));
   setData('tickets', tickets);
+  localStorage.setItem('crm_tickets_seeded', 'true');
 }
 
 function normalizeTaskStatus(status) {
@@ -719,12 +1055,14 @@ function renderTickets() {
   tbody.innerHTML = '';
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 25px; color: #64748b;">No tasks found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 25px; color: #64748b;">No tasks found.</td></tr>`;
+    updateBulkBar('tickets');
     return;
   }
 
   filtered.forEach(t => {
     const tr = document.createElement('tr');
+    if (SELECTED_ITEMS.tickets.has(t.id)) tr.classList.add('row-selected');
     const desc = t.description || t.title || 'Untitled Task';
     const normStatus = normalizeTaskStatus(t.status);
     let stateCls = 'sn-state-todo';
@@ -732,6 +1070,9 @@ function renderTickets() {
     else if (normStatus === 'Completed') stateCls = 'sn-state-done';
 
     tr.innerHTML = `
+      <td style="text-align: center;" onclick="event.stopPropagation();">
+        <input type="checkbox" class="cb-row" data-entity="tickets" data-id="${t.id}" ${SELECTED_ITEMS.tickets.has(t.id) ? 'checked' : ''} onchange="onRowSelectChange('tickets')">
+      </td>
       <td>
         <span class="sn-title-link" onclick="openTicketModal('${t.id}')" title="Click to open/edit task">
           ${desc}
@@ -752,6 +1093,7 @@ function renderTickets() {
     `;
     tbody.appendChild(tr);
   });
+  updateBulkBar('tickets');
 }
 
 window.openTicketModal = function(id) {
@@ -1150,7 +1492,9 @@ function showSection(sectionName) {
   if (navBtn) navBtn.classList.add('active');
 
   if (window.innerWidth <= 768) {
-    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar')?.classList.remove('open');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (overlay) overlay.style.display = 'none';
   }
 
   if (sectionName === 'leads') { importWebsiteLeads(); renderLeads(); }
@@ -1226,11 +1570,18 @@ document.querySelectorAll('.nav-item[data-section]').forEach(btn => {
   btn.addEventListener('click', e => showSection(e.currentTarget.dataset.section));
 });
 
-document.getElementById('mobileMenuBtn').addEventListener('click', () => {
+document.getElementById('mobileMenuBtn')?.addEventListener('click', () => {
   document.getElementById('sidebar').classList.add('open');
+  const overlay = document.getElementById('sidebarOverlay');
+  if (overlay) overlay.style.display = 'block';
 });
-document.getElementById('closeSidebarBtn').addEventListener('click', () => {
-  document.getElementById('sidebar').classList.remove('open');
+
+['closeSidebarBtn', 'sidebarOverlay'].forEach(id => {
+  document.getElementById(id)?.addEventListener('click', () => {
+    document.getElementById('sidebar').classList.remove('open');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (overlay) overlay.style.display = 'none';
+  });
 });
 
 // Button binding
@@ -1300,13 +1651,65 @@ document.getElementById('searchPastBuilds')?.addEventListener('input', () => ren
 });
 
 /* ==========================================================================
-   8. STARTUP
+   8. THEME & STARTUP (Light / Dark)
    ========================================================================== */
+function applyTheme(theme) {
+  const effectiveTheme = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', effectiveTheme);
+
+  // Update 2-way toggle buttons in sidebar
+  document.querySelectorAll('.theme-opt').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === effectiveTheme);
+  });
+
+  // Update mobile top bar button
+  const mobileBtn = document.getElementById('mobileThemeBtn');
+  if (mobileBtn) {
+    mobileBtn.innerHTML = effectiveTheme === 'dark'
+      ? '<i class="fas fa-sun" style="color: #facc15;" title="Switch to Light Mode"></i>'
+      : '<i class="fas fa-moon" title="Switch to Dark Mode"></i>';
+  }
+}
+
+function setThemeMode(theme) {
+  const mode = theme === 'dark' ? 'dark' : 'light';
+  localStorage.setItem('crm_theme_mode', mode);
+  applyTheme(mode);
+}
+
+function initTheme() {
+  let saved = localStorage.getItem('crm_theme_mode');
+  if (!saved || saved === 'system') {
+    saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+  applyTheme(saved);
+
+  // Bind icon buttons in sidebar
+  document.querySelectorAll('.theme-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setThemeMode(btn.dataset.mode);
+    });
+  });
+
+  // Bind mobile header theme button to toggle Light / Dark
+  const mobileBtn = document.getElementById('mobileThemeBtn');
+  if (mobileBtn) {
+    mobileBtn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      setThemeMode(next);
+      showToast(next === 'dark' ? 'Dark Mode' : 'Light Mode');
+    });
+  }
+}
+
 async function initApp() {
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  if (getData('tickets').length === 0) seedInitialTickets();
+  if (!localStorage.getItem('crm_tickets_seeded')) {
+    seedInitialTickets();
+  }
 
   initEmailJS();
   checkWebsiteLeadsBadge();
@@ -1315,6 +1718,7 @@ async function initApp() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  initTheme();
   await initAuth();
   if (restoreSession()) {
     initApp();

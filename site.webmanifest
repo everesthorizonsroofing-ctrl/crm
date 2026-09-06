@@ -1,0 +1,24 @@
+{
+  "name": "Everest CRM",
+  "short_name": "Everest CRM",
+  "icons": [
+    {
+      "src": "favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "theme_color": "#141a27",
+  "background_color": "#141a27",
+  "display": "standalone"
+}

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e2738" />
+      <stop offset="50%" stop-color="#141a27" />
+      <stop offset="100%" stop-color="#0b0f17" />
+    </linearGradient>
+
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE047" />
+      <stop offset="30%" stop-color="#EAB308" />
+      <stop offset="70%" stop-color="#D4A017" />
+      <stop offset="100%" stop-color="#9A7007" />
+    </linearGradient>
+
+    <linearGradient id="snowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#E2E8F0" />
+    </linearGradient>
+
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#D4A017" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Dark App Icon Tile with Rounded Corners -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Subtle Elegant Border -->
+  <rect x="14" y="14" width="484" height="484" rx="98" fill="none" stroke="url(#goldGrad)" stroke-width="4" opacity="0.3" />
+
+  <!-- MOUNTAIN PEAKS & ROOF EMBLEM -->
+  <g filter="url(#glow)">
+    <!-- Background Left Peak -->
+    <polygon points="70,350 160,215 250,350" fill="#1b283d" />
+    <polygon points="160,215 190,260 160,350" fill="#cbd5e1" opacity="0.75" />
+
+    <!-- Background Right Peak -->
+    <polygon points="262,350 352,215 442,350" fill="#1b283d" />
+    <polygon points="352,215 375,255 352,350" fill="#cbd5e1" opacity="0.75" />
+
+    <!-- Center Main Everest Peak -->
+    <polygon points="120,350 256,120 392,350" fill="#131e2e" />
+    <!-- Left Snow / Light Facet -->
+    <polygon points="256,120 120,350 256,350" fill="url(#snowGrad)" />
+    <!-- Right Gold Sunlit Facet -->
+    <polygon points="256,120 256,350 392,350" fill="url(#goldGrad)" />
+    <!-- Snow Cap Overlay on Peak -->
+    <polygon points="256,120 286,180 256,230 226,175" fill="#FFFFFF" />
+
+    <!-- Roofline Gable Arch (The Roofing Horizon) -->
+    <path d="M 96,380 L 256,255 L 416,380" fill="none" stroke="url(#goldGrad)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- White Inner Precision Line -->
+    <path d="M 132,380 L 256,282 L 380,380" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+</svg>
