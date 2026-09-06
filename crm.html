@@ -21,6 +21,8 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="crm.css?v=6">
+  <!-- Supabase Cloud Client CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <!-- LOGIN OVERLAY -->
@@ -80,6 +82,10 @@
       </nav>
 
       <div class="sidebar-footer">
+        <div id="cloudIndicator" class="cloud-indicator" title="Cloud Database Connection Status">
+          <span class="cloud-dot"></span>
+          <span class="cloud-text">Local Mode</span>
+        </div>
         <div class="theme-mode-switch">
           <button type="button" class="theme-opt active" data-mode="light" title="Light Mode">
             <i class="fas fa-sun"></i>
@@ -528,27 +534,55 @@
 
   <!-- Data Sync / Transfer Modal -->
   <div id="modalDataSync" class="modal-overlay">
-    <div class="modal-card" style="max-width: 480px;">
+    <div class="modal-card" style="max-width: 500px;">
       <div class="modal-header">
-        <h3><i class="fas fa-database" style="color: var(--brand-gold); margin-right: 8px;"></i> Backup &amp; Sync Data</h3>
+        <h3><i class="fas fa-cloud" style="color: var(--brand-gold); margin-right: 8px;"></i> Cloud Database &amp; Sync</h3>
         <button class="modal-close"><i class="fas fa-times"></i></button>
       </div>
-      <div style="padding: 10px 0; font-size: 14px; color: var(--text-muted); line-height: 1.5;">
-        Since CRM data is stored securely in your browser, use this tool to transfer all your leads, tasks, clients, and builds between localhost and your live GitHub site.
+
+      <!-- Tab Switcher -->
+      <div class="sync-tabs" style="display: flex; gap: 8px; margin: 15px 0 12px 0; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
+        <button type="button" class="btn-secondary btn-sm active" id="tabCloudSync" style="border-radius: 20px; font-weight: 600;"><i class="fas fa-bolt" style="color: var(--brand-gold); margin-right: 4px;"></i> Supabase Cloud (Auto-Sync)</button>
+        <button type="button" class="btn-secondary btn-sm" id="tabFileBackup" style="border-radius: 20px;"><i class="fas fa-file-archive" style="margin-right: 4px;"></i> File Backup</button>
       </div>
-      <div style="display: flex; flex-direction: column; gap: 14px; margin-top: 15px;">
-        <div style="background: var(--main-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
-          <strong style="display: block; margin-bottom: 6px; color: var(--text-primary);"><i class="fas fa-download" style="margin-right: 6px; color: var(--brand-gold);"></i> 1. Export from Current Browser</strong>
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Download a complete snapshot of your leads, tasks, clients, and builds (.json).</p>
-          <button type="button" id="btnExportFullBackup" class="btn-primary" style="width: 100%;"><i class="fas fa-file-export" style="margin-right: 6px;"></i> Download Full Backup (.json)</button>
+
+      <!-- Cloud Sync Section -->
+      <div id="sectionCloudSync" style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+          Connect your free Supabase database to automatically synchronize leads, tasks, and builds live across all devices.
         </div>
-        <div style="background: var(--main-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
-          <strong style="display: block; margin-bottom: 6px; color: var(--text-primary);"><i class="fas fa-upload" style="margin-right: 6px; color: #10b981;"></i> 2. Restore / Import to Live Site</strong>
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Upload your backup file to load all your localhost data onto the live GitHub site.</p>
+        <div class="form-group" style="margin-bottom: 8px;">
+          <label style="font-size: 12px; font-weight: 600;">Supabase Project URL</label>
+          <input type="url" id="cfgSupabaseUrl" placeholder="https://your-project.supabase.co" style="font-family: monospace; font-size: 13px;">
+        </div>
+        <div class="form-group" style="margin-bottom: 8px;">
+          <label style="font-size: 12px; font-weight: 600;">Supabase Anon Public API Key</label>
+          <input type="password" id="cfgSupabaseKey" placeholder="eyJhbGciOiJIUzI1NiIsIn..." style="font-family: monospace; font-size: 13px;">
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 5px;">
+          <button type="button" id="btnSaveSupabaseConfig" class="btn-primary" style="flex: 1;"><i class="fas fa-check" style="margin-right: 6px;"></i> Connect &amp; Sync</button>
+          <button type="button" id="btnDisconnectSupabase" class="btn-secondary" style="color: #ef4444;" title="Disconnect Cloud"><i class="fas fa-unlink"></i></button>
+        </div>
+        <div id="cloudStatusDetail" style="font-size: 12px; padding: 10px 12px; border-radius: 6px; background: rgba(0,0,0,0.04); display: flex; align-items: center; gap: 8px;">
+          <span class="cloud-dot"></span> <span id="cloudStatusText">Checking Cloud...</span>
+        </div>
+      </div>
+
+      <!-- File Backup Section -->
+      <div id="sectionFileBackup" style="display: none; flex-direction: column; gap: 14px;">
+        <div style="background: var(--main-bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
+          <strong style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px;"><i class="fas fa-download" style="margin-right: 6px; color: var(--brand-gold);"></i> Export Snapshot</strong>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Download a complete snapshot file (.json) to your device.</p>
+          <button type="button" id="btnExportFullBackup" class="btn-primary" style="width: 100%;"><i class="fas fa-file-export" style="margin-right: 6px;"></i> Download Backup (.json)</button>
+        </div>
+        <div style="background: var(--main-bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
+          <strong style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px;"><i class="fas fa-upload" style="margin-right: 6px; color: #10b981;"></i> Restore Snapshot</strong>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Upload a previously saved snapshot to restore data.</p>
           <input type="file" id="inputImportBackup" accept=".json" style="display: none;">
-          <button type="button" id="btnTriggerImportBackup" class="btn-secondary" style="width: 100%;"><i class="fas fa-file-import" style="margin-right: 6px;"></i> Upload &amp; Restore Backup</button>
+          <button type="button" id="btnTriggerImportBackup" class="btn-secondary" style="width: 100%;"><i class="fas fa-file-import" style="margin-right: 6px;"></i> Upload Backup (.json)</button>
         </div>
       </div>
+
     </div>
   </div>
 

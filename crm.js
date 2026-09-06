@@ -4,6 +4,8 @@
    1. CONFIG & GLOBALS
    ========================================================================== */
 const CONFIG = {
+  SUPABASE_URL: 'https://tlsyjwcgjlypopxtnaig.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_TtFpqZ1-Lhn9XuJlMjpI4Q_ceheITrU',
   GOOGLE_SHEETS_URL: '',        // Paste your Apps Script Web App URL here (optional)
   CALENDAR_EMBED_URL: '',       // Paste your Google Calendar embed URL here (optional)
   COMPANY_NAME: 'Everest Horizons Roofing',
@@ -76,16 +78,305 @@ function restoreSession() {
 
 
 /* ==========================================================================
-   3. STORAGE UTILS
+   3. STORAGE & SUPABASE CLOUD SYNC
    ========================================================================== */
+let supabaseClient = null;
+let realtimeChannel = null;
+
+function getSupabaseCredentials() {
+  const url = localStorage.getItem('crm_supabase_url') || CONFIG.SUPABASE_URL || '';
+  const key = localStorage.getItem('crm_supabase_key') || CONFIG.SUPABASE_ANON_KEY || '';
+  return { url: url.trim(), key: key.trim() };
+}
+
+function updateCloudIndicator(status, text) {
+  const ind = document.getElementById('cloudIndicator');
+  const detail = document.getElementById('cloudStatusDetail');
+  const textEl = document.getElementById('cloudStatusText');
+
+  [ind, detail].forEach(el => {
+    if (!el) return;
+    el.classList.remove('connected', 'syncing', 'offline', 'error');
+    el.classList.add(status);
+  });
+
+  if (ind) {
+    const label = ind.querySelector('.cloud-text');
+    if (label) label.textContent = text;
+  }
+  if (textEl) textEl.textContent = text;
+}
+
+function mapItemToDb(tableName, item) {
+  if (tableName === 'leads') {
+    return {
+      id: item.id,
+      name: item.name,
+      phone: item.phone || '',
+      email: item.email || '',
+      address: item.address || '',
+      source: item.source || 'Website',
+      status: item.status || 'New',
+      date_added: item.dateAdded || item.date_added || '',
+      notes: item.notes || '',
+      archived: !!item.archived
+    };
+  }
+  if (tableName === 'clients') {
+    return {
+      id: item.id,
+      name: item.name,
+      phone: item.phone || '',
+      email: item.email || '',
+      address: item.address || '',
+      status: item.status || 'Waiting - Other',
+      est_value: item.estValue || item.est_value || '',
+      notes: item.notes || '',
+      last_contact: item.lastContact || item.last_contact || '',
+      added_by: item.addedBy || '',
+      promoted_from: item.promotedFrom || ''
+    };
+  }
+  if (tableName === 'builds') {
+    return {
+      id: item.id,
+      client_name: item.clientName || item.client_name || '',
+      address: item.address || '',
+      material: item.material || '',
+      status: item.status || 'Just Started',
+      start_date: item.startDate || item.start_date || '',
+      est_completion: item.estCompletion || item.est_completion || '',
+      crew: item.crew || '',
+      notes: item.notes || '',
+      final_value: item.finalValue || item.final_value || ''
+    };
+  }
+  if (tableName === 'past_builds') {
+    return {
+      id: item.id,
+      client_name: item.clientName || item.client_name || '',
+      address: item.address || '',
+      material: item.material || '',
+      start_date: item.startDate || item.start_date || '',
+      end_date: item.endDate || item.end_date || '',
+      final_value: item.finalValue || item.final_value || '',
+      notes: item.notes || ''
+    };
+  }
+  if (tableName === 'tickets') {
+    return {
+      id: item.id,
+      description: item.description || item.title || '',
+      status: item.status || 'Pending',
+      assignee: item.assignee || 'Unassigned'
+    };
+  }
+  return item;
+}
+
+function mapDbToItem(tableName, row) {
+  if (tableName === 'leads') {
+    return {
+      id: row.id,
+      name: row.name,
+      phone: row.phone || '',
+      email: row.email || '',
+      address: row.address || '',
+      source: row.source || 'Website',
+      status: row.status || 'New',
+      dateAdded: row.date_added || row.created_at,
+      notes: row.notes || '',
+      archived: !!row.archived
+    };
+  }
+  if (tableName === 'clients') {
+    return {
+      id: row.id,
+      name: row.name,
+      phone: row.phone || '',
+      email: row.email || '',
+      address: row.address || '',
+      status: row.status || 'Waiting - Other',
+      estValue: row.est_value || '',
+      notes: row.notes || '',
+      lastContact: row.last_contact || '',
+      addedBy: row.added_by || '',
+      promotedFrom: row.promoted_from || ''
+    };
+  }
+  if (tableName === 'builds') {
+    return {
+      id: row.id,
+      clientName: row.client_name,
+      address: row.address || '',
+      material: row.material || '',
+      status: row.status || 'Just Started',
+      startDate: row.start_date || '',
+      estCompletion: row.est_completion || '',
+      crew: row.crew || '',
+      notes: row.notes || '',
+      finalValue: row.final_value || ''
+    };
+  }
+  if (tableName === 'past_builds') {
+    return {
+      id: row.id,
+      clientName: row.client_name,
+      address: row.address || '',
+      material: row.material || '',
+      startDate: row.start_date || '',
+      endDate: row.end_date || '',
+      finalValue: row.final_value || '',
+      notes: row.notes || ''
+    };
+  }
+  if (tableName === 'tickets') {
+    return {
+      id: row.id,
+      description: row.description,
+      status: row.status || 'Pending',
+      assignee: row.assignee || 'Unassigned',
+      createdAt: row.created_at
+    };
+  }
+  return row;
+}
+
+async function syncTableToSupabase(key, data) {
+  if (!supabaseClient) return;
+  const tableMap = {
+    leads: 'leads',
+    clients: 'clients',
+    builds: 'builds',
+    pastBuilds: 'past_builds',
+    tickets: 'tickets'
+  };
+  const tableName = tableMap[key];
+  if (!tableName) return;
+
+  try {
+    updateCloudIndicator('syncing', 'Syncing...');
+    const dbRows = data.map(item => mapItemToDb(tableName, item));
+    if (dbRows.length > 0) {
+      const { error: upErr } = await supabaseClient.from(tableName).upsert(dbRows);
+      if (upErr) console.warn('Supabase upsert warning:', upErr);
+    }
+
+    // Check for removed rows
+    const { data: remoteRows, error: selErr } = await supabaseClient.from(tableName).select('id');
+    if (!selErr && remoteRows) {
+      const currentIdSet = new Set(data.map(d => d.id));
+      const toDelete = remoteRows.filter(r => !currentIdSet.has(r.id)).map(r => r.id);
+      if (toDelete.length > 0) {
+        await supabaseClient.from(tableName).delete().in('id', toDelete);
+      }
+    }
+    updateCloudIndicator('connected', 'Cloud Synced');
+  } catch (err) {
+    console.warn('Supabase sync error for ' + tableName, err);
+    updateCloudIndicator('error', 'Sync Error');
+  }
+}
+
+async function pullTableFromCloud(tableName) {
+  if (!supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient.from(tableName).select('*');
+    if (error || !data) return;
+
+    const reverseMap = {
+      leads: 'leads',
+      clients: 'clients',
+      builds: 'builds',
+      past_builds: 'pastBuilds',
+      tickets: 'tickets'
+    };
+    const storageKey = reverseMap[tableName];
+    if (!storageKey) return;
+
+    const mapped = data.map(r => mapDbToItem(tableName, r));
+    setData(storageKey, mapped, false);
+
+    if (storageKey === 'leads') renderLeads();
+    else if (storageKey === 'clients') renderClients();
+    else if (storageKey === 'builds') renderBuilds();
+    else if (storageKey === 'pastBuilds') renderPastBuilds();
+    else if (storageKey === 'tickets') renderTickets();
+  } catch (err) {
+    console.warn('Error pulling table ' + tableName, err);
+  }
+}
+
+async function pullAllFromCloud() {
+  if (!supabaseClient) return;
+  updateCloudIndicator('syncing', 'Syncing Cloud...');
+  const tables = ['leads', 'clients', 'builds', 'past_builds', 'tickets'];
+  for (const t of tables) {
+    await pullTableFromCloud(t);
+  }
+  updateCloudIndicator('connected', 'Cloud Connected');
+}
+
+function setupRealtimeSubscriptions() {
+  if (!supabaseClient) return;
+  if (realtimeChannel) {
+    supabaseClient.removeChannel(realtimeChannel);
+  }
+
+  realtimeChannel = supabaseClient.channel('crm-realtime-sync')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => pullTableFromCloud('leads'))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => pullTableFromCloud('clients'))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'builds' }, () => pullTableFromCloud('builds'))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'past_builds' }, () => pullTableFromCloud('past_builds'))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => pullTableFromCloud('tickets'))
+    .subscribe();
+}
+
+async function initSupabase(showFeedback = false) {
+  const { url, key } = getSupabaseCredentials();
+  const urlInput = document.getElementById('cfgSupabaseUrl');
+  const keyInput = document.getElementById('cfgSupabaseKey');
+  if (urlInput && url) urlInput.value = url;
+  if (keyInput && key) keyInput.value = key;
+
+  if (!url || !key || !window.supabase) {
+    updateCloudIndicator('offline', 'Local Mode');
+    return false;
+  }
+
+  try {
+    updateCloudIndicator('syncing', 'Connecting...');
+    supabaseClient = window.supabase.createClient(url, key);
+    
+    // Test connection
+    const { error } = await supabaseClient.from('tickets').select('id').limit(1);
+    if (error) throw error;
+
+    updateCloudIndicator('connected', 'Cloud Connected');
+    setupRealtimeSubscriptions();
+    await pullAllFromCloud();
+
+    if (showFeedback) showToast('Connected to Supabase! Live sync active.');
+    return true;
+  } catch (err) {
+    console.error('Supabase connection failed:', err);
+    updateCloudIndicator('error', 'Cloud Error');
+    if (showFeedback) showToast('Supabase connection error: ' + (err.message || 'Check URL/Key'), 'error');
+    return false;
+  }
+}
+
 function getData(key) {
   const raw = localStorage.getItem(STORAGE_KEYS[key]);
   return raw ? JSON.parse(raw) : [];
 }
 
-function setData(key, data) {
+function setData(key, data, syncCloud = true) {
   localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(data));
   syncToSheets(key, data);
+  if (syncCloud && supabaseClient) {
+    syncTableToSupabase(key, data);
+  }
 }
 
 async function syncToSheets(key, data) {
@@ -1800,6 +2091,9 @@ async function initApp() {
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
+  // Connect to Supabase Cloud if configured
+  await initSupabase();
+
   if (!localStorage.getItem('crm_tickets_seeded') || getData('tickets').length === 0) {
     seedInitialTickets();
   }
@@ -1812,6 +2106,58 @@ async function initApp() {
 
   showSection('tickets');
 }
+
+// Cloud Indicator click -> open modal
+document.getElementById('cloudIndicator')?.addEventListener('click', () => {
+  openModal('modalDataSync');
+});
+
+// Tab Switchers in Modal
+document.getElementById('tabCloudSync')?.addEventListener('click', () => {
+  document.getElementById('tabCloudSync').classList.add('active');
+  document.getElementById('tabFileBackup').classList.remove('active');
+  document.getElementById('sectionCloudSync').style.display = 'flex';
+  document.getElementById('sectionFileBackup').style.display = 'none';
+});
+
+document.getElementById('tabFileBackup')?.addEventListener('click', () => {
+  document.getElementById('tabFileBackup').classList.add('active');
+  document.getElementById('tabCloudSync').classList.remove('active');
+  document.getElementById('sectionFileBackup').style.display = 'flex';
+  document.getElementById('sectionCloudSync').style.display = 'none';
+});
+
+// Save & Connect Supabase
+document.getElementById('btnSaveSupabaseConfig')?.addEventListener('click', async () => {
+  const url = document.getElementById('cfgSupabaseUrl').value.trim();
+  const key = document.getElementById('cfgSupabaseKey').value.trim();
+  if (!url || !key) {
+    showToast('Please enter both Supabase URL and Key', 'error');
+    return;
+  }
+  localStorage.setItem('crm_supabase_url', url);
+  localStorage.setItem('crm_supabase_key', key);
+  showToast('Connecting to Supabase...');
+  const success = await initSupabase(true);
+  if (success) {
+    closeModal('modalDataSync');
+  }
+});
+
+// Disconnect Supabase
+document.getElementById('btnDisconnectSupabase')?.addEventListener('click', () => {
+  if (!confirm('Disconnect from Supabase Cloud? Your local data will remain saved.')) return;
+  localStorage.removeItem('crm_supabase_url');
+  localStorage.removeItem('crm_supabase_key');
+  if (supabaseClient && realtimeChannel) {
+    supabaseClient.removeChannel(realtimeChannel);
+  }
+  supabaseClient = null;
+  document.getElementById('cfgSupabaseUrl').value = '';
+  document.getElementById('cfgSupabaseKey').value = '';
+  updateCloudIndicator('offline', 'Local Mode');
+  showToast('Disconnected from Supabase Cloud');
+});
 
 // Backup & Sync Modal Bindings
 document.getElementById('btnDataSync')?.addEventListener('click', () => {
