@@ -470,6 +470,99 @@ window.bulkDelete = function(entity) {
    ========================================================================== */
 
 // --- LEADS ---
+const INITIAL_LEADS = [
+  {
+    name: 'Reynier Torres',
+    phone: '786-803-1254',
+    email: '',
+    address: '',
+    source: 'Instagram',
+    status: 'New',
+    notes: 'We need send design to the client and follow up',
+    dateAdded: '2026-09-06T12:00:00.000Z'
+  },
+  {
+    name: 'Matthew Stellfox',
+    phone: '',
+    email: '',
+    address: '',
+    source: 'Messenger',
+    status: 'New',
+    notes: 'Interested in $52k pool - follow up',
+    dateAdded: '2026-09-06T12:00:00.000Z'
+  },
+  {
+    name: 'Joseph Brent Satterfield',
+    phone: '',
+    email: '',
+    address: '',
+    source: 'Messenger',
+    status: 'New',
+    notes: 'Waiting for their reply',
+    dateAdded: '2026-09-06T12:00:00.000Z'
+  },
+  {
+    name: 'Kristy Morris Page',
+    phone: '',
+    email: '',
+    address: '',
+    source: 'Messenger',
+    status: 'New',
+    notes: 'Client wants design - Possible Feb build',
+    dateAdded: '2026-09-06T12:00:00.000Z'
+  },
+  {
+    name: 'Keren Stallin',
+    phone: '469-888-3065',
+    email: '',
+    address: '',
+    source: 'Messenger',
+    status: 'New',
+    notes: 'Consultation done - follow up',
+    dateAdded: '2026-09-06T12:00:00.000Z'
+  },
+  {
+    name: 'Kay West Parrish',
+    phone: '817-343-0311',
+    email: '',
+    address: '',
+    source: 'Messenger',
+    status: 'New',
+    notes: 'Consultation done, survey received',
+    dateAdded: '2026-09-06T12:00:00.000Z'
+  },
+  {
+    name: 'Gabriel Sellan',
+    phone: '',
+    email: '',
+    address: '',
+    source: 'Instagram',
+    status: 'New',
+    notes: 'Asked for survey - waiting Follow up',
+    dateAdded: '2026-09-06T12:00:00.000Z'
+  }
+];
+
+function seedInitialLeads(force = false) {
+  const existing = getData('leads');
+  if (existing.length === 0 || force) {
+    const leads = INITIAL_LEADS.map(l => ({
+      id: generateId(),
+      name: l.name,
+      phone: l.phone,
+      email: l.email || '',
+      address: l.address || '',
+      source: l.source,
+      status: l.status,
+      dateAdded: l.dateAdded || new Date().toISOString(),
+      notes: l.notes,
+      archived: false
+    }));
+    setData('leads', leads);
+    localStorage.setItem('crm_leads_seeded', 'true');
+  }
+}
+
 function renderLeads() {
   const leads = getData('leads').filter(l => !l.archived);
   const srcFilter = document.getElementById('filterLeadSource').value;
@@ -1707,8 +1800,11 @@ async function initApp() {
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  if (!localStorage.getItem('crm_tickets_seeded')) {
+  if (!localStorage.getItem('crm_tickets_seeded') || getData('tickets').length === 0) {
     seedInitialTickets();
+  }
+  if (!localStorage.getItem('crm_leads_seeded') || getData('leads').length === 0) {
+    seedInitialLeads();
   }
 
   initEmailJS();
@@ -1716,6 +1812,70 @@ async function initApp() {
 
   showSection('tickets');
 }
+
+// Backup & Sync Modal Bindings
+document.getElementById('btnDataSync')?.addEventListener('click', () => {
+  openModal('modalDataSync');
+});
+
+document.getElementById('btnExportFullBackup')?.addEventListener('click', () => {
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    leads: getData('leads'),
+    clients: getData('clients'),
+    builds: getData('builds'),
+    pastBuilds: getData('pastBuilds'),
+    tickets: getData('tickets')
+  };
+  const jsonStr = JSON.stringify(backup, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Everest_CRM_Backup_${new Date().toISOString().split('T')[0]}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('Full backup downloaded!');
+});
+
+document.getElementById('btnTriggerImportBackup')?.addEventListener('click', () => {
+  document.getElementById('inputImportBackup')?.click();
+});
+
+document.getElementById('inputImportBackup')?.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (!data || typeof data !== 'object') throw new Error('Invalid backup file format');
+      if (Array.isArray(data.leads)) setData('leads', data.leads);
+      if (Array.isArray(data.clients)) setData('clients', data.clients);
+      if (Array.isArray(data.builds)) setData('builds', data.builds);
+      if (Array.isArray(data.pastBuilds)) setData('pastBuilds', data.pastBuilds);
+      if (Array.isArray(data.tickets)) setData('tickets', data.tickets);
+
+      localStorage.setItem('crm_leads_seeded', 'true');
+      localStorage.setItem('crm_tickets_seeded', 'true');
+
+      renderTickets();
+      renderLeads();
+      renderClients();
+      renderBuilds();
+      renderPastBuilds();
+
+      closeModal('modalDataSync');
+      showToast('All CRM data restored successfully!');
+    } catch (err) {
+      showToast('Import failed: ' + err.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+});
 
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
