@@ -913,6 +913,7 @@ function renderLeads() {
   }
 
   filtered.forEach(lead => {
+    const tr = document.createElement('tr');
     if (SELECTED_ITEMS.leads.has(lead.id)) tr.classList.add('row-selected');
     tr.innerHTML = `
       <td style="text-align: center;" onclick="event.stopPropagation();">
@@ -1709,23 +1710,23 @@ function loadCalendar() {
 document.getElementById('formLead').addEventListener('submit', e => {
   e.preventDefault();
   const id = document.getElementById('leadId').value;
-  const isNew = !id;
+  const existingLead = !isNew ? getData('leads').find(l => l.id === id) : null;
   const lead = {
     id: isNew ? generateId() : id,
-    name: document.getElementById('leadName').value,
-    phone: document.getElementById('leadPhone').value,
-    email: document.getElementById('leadEmail').value,
-    address: document.getElementById('leadAddress').value,
+    name: document.getElementById('leadName').value.trim(),
+    phone: document.getElementById('leadPhone').value.trim(),
+    email: document.getElementById('leadEmail').value.trim(),
+    address: document.getElementById('leadAddress').value.trim(),
     source: document.getElementById('leadSource').value,
     status: document.getElementById('leadStatus').value,
-    notes: document.getElementById('leadNotes').value,
-    dateAdded: isNew ? new Date().toISOString() : getData('leads').find(l=>l.id===id).dateAdded,
-    addedBy: isNew ? currentUser.id : getData('leads').find(l=>l.id===id).addedBy,
+    notes: document.getElementById('leadNotes').value.trim(),
+    dateAdded: isNew ? new Date().toISOString() : (existingLead?.dateAdded || new Date().toISOString()),
+    addedBy: isNew ? (currentUser?.displayName || currentUser?.id || 'Admin') : (existingLead?.addedBy || 'Admin'),
     archived: false
   };
   
   const leads = getData('leads');
-  if(isNew) leads.push(lead);
+  if(isNew) leads.unshift(lead);
   else {
     const idx = leads.findIndex(l => l.id === id);
     if(idx > -1) leads[idx] = lead;
@@ -1741,17 +1742,18 @@ document.getElementById('formClient').addEventListener('submit', e => {
   e.preventDefault();
   const id = document.getElementById('clientId').value;
   const isNew = !id;
+  const existingClient = !isNew ? getData('clients').find(c => c.id === id) : null;
   const client = {
     id: isNew ? generateId() : id,
-    name: document.getElementById('clientName').value,
-    phone: document.getElementById('clientPhone').value,
-    email: document.getElementById('clientEmail').value,
-    address: document.getElementById('clientAddress').value,
+    name: document.getElementById('clientName').value.trim(),
+    phone: document.getElementById('clientPhone').value.trim(),
+    email: document.getElementById('clientEmail').value.trim(),
+    address: document.getElementById('clientAddress').value.trim(),
     status: document.getElementById('clientStatus').value,
-    estValue: document.getElementById('clientEstValue').value,
+    estValue: document.getElementById('clientEstValue').value.trim(),
     lastContact: document.getElementById('clientLastContact').value,
-    notes: document.getElementById('clientNotes').value,
-    addedBy: isNew ? currentUser.id : getData('clients').find(c=>c.id===id).addedBy
+    notes: document.getElementById('clientNotes').value.trim(),
+    addedBy: isNew ? (currentUser?.displayName || currentUser?.id || 'Admin') : (existingClient?.addedBy || 'Admin')
   };
   
   const clients = getData('clients');
