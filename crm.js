@@ -272,16 +272,6 @@ async function syncTableToSupabase(key, data) {
       const { error: upErr } = await supabaseClient.from(tableName).upsert(dbRows);
       if (upErr) console.warn('Supabase upsert warning:', upErr);
     }
-
-    // Check for removed rows
-    const { data: remoteRows, error: selErr } = await supabaseClient.from(tableName).select('id');
-    if (!selErr && remoteRows) {
-      const currentIdSet = new Set(data.map(d => d.id));
-      const toDelete = remoteRows.filter(r => !currentIdSet.has(r.id)).map(r => r.id);
-      if (toDelete.length > 0) {
-        await supabaseClient.from(tableName).delete().in('id', toDelete);
-      }
-    }
     updateCloudIndicator('connected', 'Cloud Synced');
   } catch (err) {
     console.warn('Supabase sync error for ' + tableName, err);
@@ -289,10 +279,39 @@ async function syncTableToSupabase(key, data) {
   }
 }
 
+async function deleteFromSupabase(key, idOrIds) {
+  if (!supabaseClient) return;
+  const tableMap = {
+    leads: 'leads',
+    clients: 'clients',
+    builds: 'builds',
+    pastBuilds: 'past_builds',
+    tickets: 'tickets'
+  };
+  const tableName = tableMap[key];
+  if (!tableName) return;
+
+  try {
+    if (Array.isArray(idOrIds)) {
+      if (idOrIds.length > 0) {
+        await supabaseClient.from(tableName).delete().in('id', idOrIds);
+      }
+    } else if (idOrIds) {
+      await supabaseClient.from(tableName).delete().eq('id', idOrIds);
+    }
+  } catch (err) {
+    console.warn(`Error deleting from Supabase ${tableName}:`, err);
+  }
+}
+
 async function pullTableFromCloud(tableName) {
   if (!supabaseClient) return;
   try {
-    const { data, error } = await supabaseClient.from(tableName).select('*');
+    let query = supabaseClient.from(tableName).select('*');
+    if (tableName === 'tickets' || tableName === 'leads') {
+      query = query.order('created_at', { ascending: false });
+    }
+    const { data, error } = await query;
     if (error || !data) return;
 
     const reverseMap = {
@@ -321,10 +340,12 @@ async function pullTableFromCloud(tableName) {
 async function pullAllFromCloud() {
   if (!supabaseClient) return;
   updateCloudIndicator('syncing', 'Syncing Cloud...');
-  const tables = ['leads', 'clients', 'builds', 'past_builds', 'tickets'];
+  const tables = ['tickets', 'leads', 'clients', 'builds', 'past_builds'];
   for (const t of tables) {
     await pullTableFromCloud(t);
   }
+  localStorage.setItem('crm_tickets_seeded', 'true');
+  localStorage.setItem('crm_leads_seeded', 'true');
   updateCloudIndicator('connected', 'Cloud Connected');
 }
 
@@ -752,9 +773,11 @@ window.bulkDelete = function(entity) {
   if (!confirm(`Are you sure you want to delete ${count} selected item(s)?`)) return;
 
   const storageKey = entity;
+  const idsToDelete = Array.from(set);
   let items = getData(storageKey);
   items = items.filter(item => !set.has(item.id));
-  setData(storageKey, items);
+  setData(storageKey, items, false);
+  deleteFromSupabase(storageKey, idsToDelete);
   set.clear();
   updateBulkBar(entity);
 
@@ -860,7 +883,7 @@ function seedInitialLeads(force = false) {
       notes: l.notes,
       archived: false
     }));
-    setData('leads', leads);
+    setData('leads', leads, false);
     localStorage.setItem('crm_leads_seeded', 'true');
   }
 }
@@ -881,6 +904,8 @@ function renderLeads() {
     return true;
   });
 
+  filtered.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+
   if (filtered.length === 0) {
     tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;">No leads found.</td></tr>`;
     updateBulkBar('leads');
@@ -888,7 +913,6 @@ function renderLeads() {
   }
 
   filtered.forEach(lead => {
-    const tr = document.createElement('tr');
     if (SELECTED_ITEMS.leads.has(lead.id)) tr.classList.add('row-selected');
     tr.innerHTML = `
       <td style="text-align: center;" onclick="event.stopPropagation();">
@@ -931,7 +955,8 @@ window.editLead = function(id) {
 window.deleteLead = function(id) {
   if (!confirm('Are you sure you want to delete this lead?')) return;
   const leads = getData('leads').filter(l => l.id !== id);
-  setData('leads', leads);
+  setData('leads', leads, false);
+  deleteFromSupabase('leads', id);
   SELECTED_ITEMS.leads.delete(id);
   renderLeads();
   showToast('Lead deleted');
@@ -1009,7 +1034,9 @@ function renderClients() {
 window.deleteClient = function(id) {
   if (!confirm('Are you sure you want to remove this client?')) return;
   const clients = getData('clients').filter(c => c.id !== id);
-  setData('clients', clients);
+  setData('clients', clients, false);
+  deleteFromSupabase('clients', id);
+  SELECTED_ITEMS.clients.delete(id);
   renderClients();
   showToast('Client removed');
 };
@@ -1098,7 +1125,9 @@ function renderBuilds() {
 window.deleteBuild = function(id) {
   if (!confirm('Are you sure you want to delete this build?')) return;
   const builds = getData('builds').filter(b => b.id !== id);
-  setData('builds', builds);
+  setData('builds', builds, false);
+  deleteFromSupabase('builds', id);
+  SELECTED_ITEMS.builds.delete(id);
   renderBuilds();
   showToast('Build deleted');
 };
@@ -1178,7 +1207,9 @@ function renderPastBuilds() {
 window.deletePastBuild = function(id) {
   if (!confirm('Are you sure you want to remove this past build?')) return;
   const past = getData('pastBuilds').filter(p => p.id !== id);
-  setData('pastBuilds', past);
+  setData('pastBuilds', past, false);
+  deleteFromSupabase('pastBuilds', id);
+  SELECTED_ITEMS.pastBuilds.delete(id);
   renderPastBuilds();
   showToast('Past build removed');
 };
@@ -1419,7 +1450,7 @@ function seedInitialTickets() {
     assignee: t.assignee,
     createdAt: new Date().toISOString(),
   }));
-  setData('tickets', tickets);
+  setData('tickets', tickets, false);
   localStorage.setItem('crm_tickets_seeded', 'true');
 }
 
@@ -1506,7 +1537,9 @@ window.openTicketModal = function(id) {
 window.deleteTicket = function(id) {
   if (!confirm('Are you sure you want to delete this task?')) return;
   const tickets = getData('tickets').filter(t => t.id !== id);
-  setData('tickets', tickets);
+  setData('tickets', tickets, false);
+  deleteFromSupabase('tickets', id);
+  SELECTED_ITEMS.tickets.delete(id);
   closeModal('modalTicket');
   renderTickets();
   showToast('Task deleted');
@@ -1764,7 +1797,8 @@ document.getElementById('formBuild').addEventListener('submit', e => {
       if(!isNew) {
         const idx = builds.findIndex(b => b.id === id);
         if(idx > -1) builds.splice(idx, 1);
-        setData('builds', builds);
+        setData('builds', builds, false);
+        deleteFromSupabase('builds', id);
       }
       closeModal('modalBuild');
       renderBuilds();
@@ -2111,14 +2145,21 @@ async function initApp() {
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  // Connect to Supabase Cloud if configured
-  await initSupabase();
+  // 1. Connect to Supabase Cloud & pull fresh live data
+  const cloudConnected = await initSupabase();
 
-  if (!localStorage.getItem('crm_tickets_seeded') || getData('tickets').length === 0) {
-    seedInitialTickets();
-  }
-  if (!localStorage.getItem('crm_leads_seeded') || getData('leads').length === 0) {
-    seedInitialLeads();
+  // 2. Only seed fallback demo data if Supabase is completely disconnected and local storage is empty
+  if (!cloudConnected) {
+    if (!localStorage.getItem('crm_tickets_seeded') && getData('tickets').length === 0) {
+      seedInitialTickets();
+    }
+    if (!localStorage.getItem('crm_leads_seeded') && getData('leads').length === 0) {
+      seedInitialLeads();
+    }
+  } else {
+    // Supabase is active: mark seeded flags so dummy seeding never runs
+    localStorage.setItem('crm_tickets_seeded', 'true');
+    localStorage.setItem('crm_leads_seeded', 'true');
   }
 
   initEmailJS();
