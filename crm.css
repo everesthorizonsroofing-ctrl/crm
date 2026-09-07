@@ -294,6 +294,15 @@ button { cursor: pointer; border: none; outline: none; font-family: inherit; tra
 }
 #sidebarOverlay {
   display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+#sidebarOverlay.active {
+  display: block !important;
 }
 
 /* Mobile Responsiveness & iPhone Optimization */
@@ -355,11 +364,16 @@ button { cursor: pointer; border: none; outline: none; font-family: inherit; tra
 
   /* Overlay backdrop */
   #sidebarOverlay {
+    display: none;
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.55);
     z-index: 1000;
     backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+  #sidebarOverlay.active {
+    display: block !important;
   }
 
   /* Sidebar Drawer */

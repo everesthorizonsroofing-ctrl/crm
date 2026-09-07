@@ -1889,7 +1889,10 @@ function showSection(sectionName) {
   if (window.innerWidth <= 768) {
     document.getElementById('sidebar')?.classList.remove('open');
     const overlay = document.getElementById('sidebarOverlay');
-    if (overlay) overlay.style.display = 'none';
+    if (overlay) {
+      overlay.classList.remove('active');
+      overlay.style.display = 'none';
+    }
   }
 
   if (sectionName === 'leads') { importWebsiteLeads(); renderLeads(); }
@@ -1968,14 +1971,20 @@ document.querySelectorAll('.nav-item[data-section]').forEach(btn => {
 document.getElementById('mobileMenuBtn')?.addEventListener('click', () => {
   document.getElementById('sidebar').classList.add('open');
   const overlay = document.getElementById('sidebarOverlay');
-  if (overlay) overlay.style.display = 'block';
+  if (overlay) {
+    overlay.classList.add('active');
+    overlay.style.display = 'block';
+  }
 });
 
 ['closeSidebarBtn', 'sidebarOverlay'].forEach(id => {
   document.getElementById(id)?.addEventListener('click', () => {
     document.getElementById('sidebar').classList.remove('open');
     const overlay = document.getElementById('sidebarOverlay');
-    if (overlay) overlay.style.display = 'none';
+    if (overlay) {
+      overlay.classList.remove('active');
+      overlay.style.display = 'none';
+    }
   });
 });
 
