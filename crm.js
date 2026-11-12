@@ -804,7 +804,7 @@ function renderLeads() {
   filtered.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;">No leads found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="table-empty">No leads found.</td></tr>`;
     updateBulkBar('leads');
     return;
   }
@@ -822,7 +822,7 @@ function renderLeads() {
       <td><span class="badge badge-status-${lead.status.toLowerCase().replace(/[- ]/g,'')}">${lead.status}</span></td>
       <td>${getDisplayDate(lead.dateAdded)}</td>
       <td>${formatNotes(lead.notes)}</td>
-      <td>
+      <td class="table-actions">
         <div class="actions">
           <button class="btn-secondary btn-sm" onclick="editLead('${lead.id}')" title="Edit"><i class="fas fa-edit"></i></button>
           <button class="btn-primary btn-sm" onclick="promoteLead('${lead.id}')" title="Promote to Client"><i class="fas fa-level-up-alt"></i></button>
@@ -896,7 +896,7 @@ function renderClients() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 25px; color: #64748b;">No potential clients found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="table-empty">No potential clients found.</td></tr>`;
     updateBulkBar('clients');
     return;
   }
@@ -914,8 +914,8 @@ function renderClients() {
       <td><span class="sn-state-pill sn-state-inprogress">${c.status}</span></td>
       <td>${c.estValue ? '$' + c.estValue : '-'}</td>
       <td>${formatNotes(c.notes)}</td>
-      <td style="text-align: center;">
-        <div class="actions" style="justify-content: center;">
+      <td class="table-actions">
+        <div class="actions">
           <button class="btn-secondary btn-sm" onclick="editClient('${c.id}')" title="Edit"><i class="fas fa-edit"></i></button>
           <button class="btn-primary btn-sm" onclick="promoteClient('${c.id}')" title="Start Build"><i class="fas fa-hard-hat"></i></button>
           <button class="btn-icon-danger" onclick="deleteClient('${c.id}')" title="Delete"><i class="fas fa-trash"></i></button>
@@ -984,7 +984,7 @@ function renderBuilds() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding: 25px; color: #64748b;">No active builds found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="table-empty">No active builds found.</td></tr>`;
     updateBulkBar('builds');
     return;
   }
@@ -1003,8 +1003,8 @@ function renderBuilds() {
       <td>${getDisplayDate(b.startDate)}</td>
       <td>${getDisplayDate(b.estCompletion)}</td>
       <td>${formatNotes(b.notes)}</td>
-      <td style="text-align: center;">
-        <div class="actions" style="justify-content: center;">
+      <td class="table-actions">
+        <div class="actions">
           <button class="btn-secondary btn-sm" onclick="editBuild('${b.id}')" title="Edit"><i class="fas fa-edit"></i></button>
           <button class="btn-icon-danger" onclick="deleteBuild('${b.id}')" title="Delete"><i class="fas fa-trash"></i></button>
         </div>
@@ -1066,7 +1066,7 @@ function renderPastBuilds() {
   const filtered = past.filter(p => !search || p.clientName.toLowerCase().includes(search) || p.address.toLowerCase().includes(search));
   
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;">No past builds found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="table-empty">No past builds found.</td></tr>`;
     updateBulkBar('pastBuilds');
     return;
   }
@@ -1085,16 +1085,32 @@ function renderPastBuilds() {
       <td>${getDisplayDate(p.endDate)}</td>
       <td>$${p.finalValue || 0}</td>
       <td>${formatNotes(p.notes)}</td>
-      <td style="text-align: center;">
-        <button class="btn-icon-danger" onclick="deletePastBuild('${p.id}')" title="Delete Past Build">
-          <i class="fas fa-trash"></i>
-        </button>
+      <td class="table-actions">
+        <div class="actions">
+          <button type="button" class="btn-secondary btn-sm" onclick="editPastBuild('${p.id}')" title="Edit Past Build" aria-label="Edit Past Build"><i class="fas fa-edit"></i></button>
+          <button type="button" class="btn-icon-danger" onclick="deletePastBuild('${p.id}')" title="Delete Past Build" aria-label="Delete Past Build"><i class="fas fa-trash"></i></button>
+        </div>
       </td>
     `;
     tbody.appendChild(tr);
   });
   updateBulkBar('pastBuilds');
 }
+
+window.editPastBuild = function(id) {
+  const build = getData('pastBuilds').find(record => record.id === id);
+  if (!build) return;
+  document.getElementById('pastBuildId').value = build.id;
+  document.getElementById('pastClientName').value = build.clientName;
+  document.getElementById('pastAddress').value = build.address || '';
+  document.getElementById('pastMaterial').value = build.material || '';
+  document.getElementById('pastStartDate').value = (build.startDate || '').slice(0, 10);
+  document.getElementById('pastEndDate').value = (build.endDate || '').slice(0, 10);
+  document.getElementById('pastFinalValue').value = build.finalValue ?? '';
+  document.getElementById('pastNotes').value = build.notes || '';
+  document.getElementById('modalPastBuildTitle').textContent = 'Edit Past Build';
+  openModal('modalPastBuild');
+};
 
 window.deletePastBuild = function(id) {
   if (!confirm('Are you sure you want to remove this past build?')) return;
@@ -1348,7 +1364,7 @@ function renderTickets() {
   tbody.innerHTML = '';
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 25px; color: #64748b;">No tasks found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="table-empty">No tasks found.</td></tr>`;
     updateBulkBar('tickets');
     return;
   }
@@ -1377,8 +1393,8 @@ function renderTickets() {
       <td style="font-weight: 600; color: #334155;">
         ${t.assignee && t.assignee !== 'Unassigned' ? t.assignee : '<span style="color:#94a3b8;font-style:italic;">Unassigned</span>'}
       </td>
-      <td style="text-align: center;">
-        <div class="actions" style="justify-content: center;">
+      <td class="table-actions">
+        <div class="actions">
           <button class="btn-secondary btn-sm" onclick="openTicketModal('${t.id}')" title="Open Task"><i class="fas fa-edit"></i></button>
           <button class="btn-icon-danger" onclick="deleteTicket('${t.id}')" title="Delete Task"><i class="fas fa-trash"></i></button>
         </div>
@@ -1675,7 +1691,7 @@ function showToast(msg, type='success') {
   setTimeout(() => {
     t.classList.remove('show');
     setTimeout(() => t.remove(), 300);
-  }, 3000);
+  }, type === 'error' ? 3000 : 1400);
 }
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -1748,23 +1764,35 @@ document.getElementById('formPastBuild').addEventListener('submit', e => {
   e.preventDefault();
   const id = document.getElementById('pastBuildId').value;
   const isNew = !id;
+  const past = getData('pastBuilds');
+  const index = past.findIndex(build => build.id === id);
+  const existing = past[index];
+  if (!isNew && !existing) {
+    showToast('This past build is no longer available.', 'error');
+    return;
+  }
+  const startDate = document.getElementById('pastStartDate').value;
+  const endDate = document.getElementById('pastEndDate').value;
   const pastBuild = {
+    ...existing,
     id: isNew ? generateId() : id,
     clientName: document.getElementById('pastClientName').value,
     address: document.getElementById('pastAddress').value,
     material: document.getElementById('pastMaterial').value,
-    startDate: document.getElementById('pastStartDate').value,
-    endDate: document.getElementById('pastEndDate').value,
+    startDate: startDate === existing?.startDate?.slice(0, 10) ? existing.startDate : startDate,
+    endDate: endDate === existing?.endDate?.slice(0, 10) ? existing.endDate : endDate,
     finalValue: document.getElementById('pastFinalValue').value,
     notes: document.getElementById('pastNotes').value,
   };
-  const past = getData('pastBuilds');
   if (isNew) past.unshift(pastBuild);
-  else {
-    const idx = past.findIndex(p => p.id === id);
-    if (idx > -1) past[idx] = pastBuild;
+  else past[index] = pastBuild;
+  try {
+    setData('pastBuilds', past);
+  } catch (error) {
+    console.error('Past build save failed:', error);
+    showToast('Could not save on this device. Keep the form open and try again.', 'error');
+    return;
   }
-  setData('pastBuilds', past);
   closeModal('modalPastBuild');
   renderPastBuilds();
   showToast(isNew ? 'Past build added' : 'Past build updated');

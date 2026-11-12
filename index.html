@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="crm.css?v=7">
+  <link rel="stylesheet" href="crm.css?v=9">
   <!-- Supabase Cloud Client CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -130,7 +130,7 @@
         </div>
         <div class="bulk-action-bar" id="bulkBar-leads" style="display: none;">
           <span class="bulk-count">0 selected</span>
-          <span class="bulk-trash-icon" onclick="bulkDelete('leads')" title="Delete selected" style="cursor: pointer; color: #ef4444; font-size: 11px; margin-left: 4px; display: inline-flex; align-items: center; line-height: 1;"><i class="fas fa-trash"></i></span>
+          <button type="button" class="bulk-trash-icon" onclick="bulkDelete('leads')" title="Delete selected" aria-label="Delete selected"><i class="fas fa-trash"></i></button>
         </div>
         <div class="table-responsive">
           <table id="leadsTable" class="data-table">
@@ -143,7 +143,7 @@
                 <th>Status</th>
                 <th>Date</th>
                 <th>Notes</th>
-                <th>Actions</th>
+                <th class="table-actions">Actions</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -172,10 +172,10 @@
         </div>
         <div class="bulk-action-bar" id="bulkBar-clients" style="display: none;">
           <span class="bulk-count">0 selected</span>
-          <span class="bulk-trash-icon" onclick="bulkDelete('clients')" title="Delete selected" style="cursor: pointer; color: #ef4444; font-size: 11px; margin-left: 4px; display: inline-flex; align-items: center; line-height: 1;"><i class="fas fa-trash"></i></span>
+          <button type="button" class="bulk-trash-icon" onclick="bulkDelete('clients')" title="Delete selected" aria-label="Delete selected"><i class="fas fa-trash"></i></button>
         </div>
-        <div class="table-responsive sn-table-wrap">
-          <table id="clientsTable" class="data-table sn-table">
+        <div class="table-responsive">
+          <table id="clientsTable" class="data-table">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" class="cb-select-all" data-entity="clients" onclick="toggleSelectAll('clients', event)"></th>
@@ -185,7 +185,7 @@
                 <th>Status</th>
                 <th>Est. Value</th>
                 <th>Notes</th>
-                <th style="width: 110px; text-align: center;">Actions</th>
+                <th class="table-actions">Actions</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -213,10 +213,10 @@
         </div>
         <div class="bulk-action-bar" id="bulkBar-builds" style="display: none;">
           <span class="bulk-count">0 selected</span>
-          <span class="bulk-trash-icon" onclick="bulkDelete('builds')" title="Delete selected" style="cursor: pointer; color: #ef4444; font-size: 11px; margin-left: 4px; display: inline-flex; align-items: center; line-height: 1;"><i class="fas fa-trash"></i></span>
+          <button type="button" class="bulk-trash-icon" onclick="bulkDelete('builds')" title="Delete selected" aria-label="Delete selected"><i class="fas fa-trash"></i></button>
         </div>
-        <div class="table-responsive sn-table-wrap">
-          <table id="buildsTable" class="data-table sn-table">
+        <div class="table-responsive">
+          <table id="buildsTable" class="data-table">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" class="cb-select-all" data-entity="builds" onclick="toggleSelectAll('builds', event)"></th>
@@ -227,7 +227,7 @@
                 <th>Start Date</th>
                 <th>Est. Completion</th>
                 <th>Notes</th>
-                <th style="width: 110px; text-align: center;">Actions</th>
+                <th class="table-actions">Actions</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -249,7 +249,7 @@
         </div>
         <div class="bulk-action-bar" id="bulkBar-pastBuilds" style="display: none;">
           <span class="bulk-count">0 selected</span>
-          <span class="bulk-trash-icon" onclick="bulkDelete('pastBuilds')" title="Delete selected" style="cursor: pointer; color: #ef4444; font-size: 11px; margin-left: 4px; display: inline-flex; align-items: center; line-height: 1;"><i class="fas fa-trash"></i></span>
+          <button type="button" class="bulk-trash-icon" onclick="bulkDelete('pastBuilds')" title="Delete selected" aria-label="Delete selected"><i class="fas fa-trash"></i></button>
         </div>
         <div class="table-responsive">
           <table id="pastBuildsTable" class="data-table">
@@ -263,7 +263,7 @@
                 <th>End Date</th>
                 <th>Final Value</th>
                 <th>Notes</th>
-                <th style="width: 80px; text-align: center;">Actions</th>
+                <th class="table-actions">Actions</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -297,18 +297,18 @@
         </div>
         <div class="bulk-action-bar" id="bulkBar-tickets" style="display: none;">
           <span class="bulk-count">0 selected</span>
-          <span class="bulk-trash-icon" onclick="bulkDelete('tickets')" title="Delete selected" style="cursor: pointer; color: #ef4444; font-size: 11px; margin-left: 4px; display: inline-flex; align-items: center; line-height: 1;"><i class="fas fa-trash"></i></span>
+          <button type="button" class="bulk-trash-icon" onclick="bulkDelete('tickets')" title="Delete selected" aria-label="Delete selected"><i class="fas fa-trash"></i></button>
         </div>
 
-        <div class="table-responsive sn-table-wrap">
-          <table id="ticketsTable" class="data-table sn-table">
+        <div class="table-responsive">
+          <table id="ticketsTable" class="data-table">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" class="cb-select-all" data-entity="tickets" onclick="toggleSelectAll('tickets', event)"></th>
                 <th>Description</th>
                 <th style="width: 150px;">State</th>
                 <th style="width: 140px;">Assigned to</th>
-                <th style="width: 100px; text-align: center;">Actions</th>
+                <th class="table-actions">Actions</th>
               </tr>
             </thead>
             <tbody id="ticketsTableBody"></tbody>
@@ -325,7 +325,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="modalLeadTitle">Add Lead</h3>
-        <button class="modal-close"><i class="fas fa-times"></i></button>
+        <button type="button" class="modal-close" aria-label="Close"><i class="fas fa-times"></i></button>
       </div>
       <form id="formLead">
         <input type="hidden" id="leadId">
@@ -367,7 +367,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="modalClientTitle">Add Client</h3>
-        <button class="modal-close"><i class="fas fa-times"></i></button>
+        <button type="button" class="modal-close" aria-label="Close"><i class="fas fa-times"></i></button>
       </div>
       <form id="formClient">
         <input type="hidden" id="clientId">
@@ -402,7 +402,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="modalBuildTitle">Add Build</h3>
-        <button class="modal-close"><i class="fas fa-times"></i></button>
+        <button type="button" class="modal-close" aria-label="Close"><i class="fas fa-times"></i></button>
       </div>
       <form id="formBuild">
         <input type="hidden" id="buildId">
@@ -437,7 +437,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="modalTicketTitle">Task</h3>
-        <button class="modal-close"><i class="fas fa-times"></i></button>
+        <button type="button" class="modal-close" aria-label="Close"><i class="fas fa-times"></i></button>
       </div>
       <form id="formTicket">
         <input type="hidden" id="ticketId">
@@ -463,9 +463,9 @@
             </select>
           </div>
         </div>
-        <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="modal-footer">
           <button type="button" id="btnDeleteTicketModal" class="btn-danger" style="display: none;"><i class="fas fa-trash"></i> Delete Task</button>
-          <div style="display: flex; gap: 10px; margin-left: auto;">
+          <div class="modal-footer-actions">
             <button type="button" class="btn-secondary modal-cancel">Cancel</button>
             <button type="submit" class="btn-primary">Save Task</button>
           </div>
@@ -479,17 +479,17 @@
     <div class="modal-card">
       <div class="modal-header">
         <h3 id="modalPastBuildTitle">Add Past Build</h3>
-        <button class="modal-close"><i class="fas fa-times"></i></button>
+        <button type="button" class="modal-close" aria-label="Close"><i class="fas fa-times"></i></button>
       </div>
       <form id="formPastBuild">
         <input type="hidden" id="pastBuildId">
         <div class="form-grid">
           <div class="form-group"><label>Client Name*</label><input type="text" id="pastClientName" required></div>
-          <div class="form-group"><label>Address*</label><input type="text" id="pastAddress" required></div>
+          <div class="form-group"><label>Address</label><input type="text" id="pastAddress"></div>
           <div class="form-group"><label>Material</label><input type="text" id="pastMaterial" placeholder="e.g. Architectural Shingles"></div>
           <div class="form-group"><label>Start Date</label><input type="date" id="pastStartDate"></div>
           <div class="form-group"><label>End Date</label><input type="date" id="pastEndDate"></div>
-          <div class="form-group"><label>Final Value ($)</label><input type="number" id="pastFinalValue" placeholder="e.g. 15000"></div>
+          <div class="form-group"><label>Final Value ($)</label><input type="number" id="pastFinalValue" step="any" placeholder="e.g. 15000"></div>
           <div class="form-group full-width"><label>Notes</label><textarea id="pastNotes" rows="2"></textarea></div>
         </div>
         <div class="modal-footer">
@@ -505,13 +505,13 @@
     <div class="modal-card" style="max-width: 500px;">
       <div class="modal-header">
         <h3><i class="fas fa-cloud" style="color: var(--brand-gold); margin-right: 8px;"></i> Cloud Database &amp; Sync</h3>
-        <button class="modal-close"><i class="fas fa-times"></i></button>
+        <button type="button" class="modal-close" aria-label="Close"><i class="fas fa-times"></i></button>
       </div>
 
       <!-- Tab Switcher -->
       <div class="sync-tabs" style="display: flex; gap: 8px; margin: 15px 0 12px 0; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
-        <button type="button" class="btn-secondary btn-sm active" id="tabCloudSync" style="border-radius: 20px; font-weight: 600;"><i class="fas fa-bolt" style="color: var(--brand-gold); margin-right: 4px;"></i> Supabase Cloud (Auto-Sync)</button>
-        <button type="button" class="btn-secondary btn-sm" id="tabFileBackup" style="border-radius: 20px;"><i class="fas fa-file-archive" style="margin-right: 4px;"></i> File Backup</button>
+        <button type="button" class="btn-secondary active" id="tabCloudSync"><i class="fas fa-bolt" style="color: var(--brand-gold);"></i> Supabase Cloud (Auto-Sync)</button>
+        <button type="button" class="btn-secondary" id="tabFileBackup"><i class="fas fa-file-archive"></i> File Backup</button>
       </div>
 
       <!-- Cloud Sync Section -->
@@ -526,7 +526,7 @@
             </div>
           </div>
           <div style="display: flex; gap: 8px; margin-top: 14px;">
-            <button type="button" id="btnToggleConfigFields" class="btn-secondary" title="Settings" style="font-size: 13px;"><i class="fas fa-cog" style="margin-right: 4px;"></i> Settings</button>
+            <button type="button" id="btnToggleConfigFields" class="btn-secondary" title="Settings"><i class="fas fa-cog"></i> Settings</button>
             <button type="button" id="btnDisconnectSupabase" class="btn-secondary" style="color: #ef4444;" title="Disconnect Cloud"><i class="fas fa-unlink"></i></button>
           </div>
         </div>
@@ -537,15 +537,15 @@
             Connect your Supabase database to automatically sync all CRM records across your devices.
           </div>
           <div class="form-group" style="margin-bottom: 8px;">
-            <label style="font-size: 12px; font-weight: 600;">Supabase Project URL</label>
-            <input type="password" id="cfgSupabaseUrl" placeholder="https://your-project.supabase.co" style="font-family: monospace; font-size: 13px;" autocomplete="off">
+            <label>Supabase Project URL</label>
+            <input type="password" id="cfgSupabaseUrl" placeholder="https://your-project.supabase.co" style="font-family: var(--font-mono);" autocomplete="off">
           </div>
           <div class="form-group" style="margin-bottom: 8px;">
-            <label style="font-size: 12px; font-weight: 600;">Supabase Public API Key</label>
-            <input type="password" id="cfgSupabaseKey" placeholder="sb_publishable_..." style="font-family: monospace; font-size: 13px;" autocomplete="off">
+            <label>Supabase Public API Key</label>
+            <input type="password" id="cfgSupabaseKey" placeholder="sb_publishable_..." style="font-family: var(--font-mono);" autocomplete="off">
           </div>
           <div style="display: flex; gap: 8px; margin-top: 5px;">
-            <button type="button" id="btnSaveSupabaseConfig" class="btn-primary" style="flex: 1;"><i class="fas fa-check" style="margin-right: 6px;"></i> Connect &amp; Sync</button>
+            <button type="button" id="btnSaveSupabaseConfig" class="btn-primary" style="flex: 1;"><i class="fas fa-check"></i> Connect &amp; Sync</button>
           </div>
         </div>
 
@@ -559,13 +559,13 @@
         <div style="background: var(--main-bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
           <strong style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px;"><i class="fas fa-download" style="margin-right: 6px; color: var(--brand-gold);"></i> Export Snapshot</strong>
           <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Download a complete snapshot file (.json) to your device.</p>
-          <button type="button" id="btnExportFullBackup" class="btn-primary" style="width: 100%;"><i class="fas fa-file-export" style="margin-right: 6px;"></i> Download Backup (.json)</button>
+          <button type="button" id="btnExportFullBackup" class="btn-primary" style="width: 100%;"><i class="fas fa-file-export"></i> Download Backup (.json)</button>
         </div>
         <div style="background: var(--main-bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
           <strong style="display: block; margin-bottom: 4px; color: var(--text-primary); font-size: 14px;"><i class="fas fa-upload" style="margin-right: 6px; color: #10b981;"></i> Restore Snapshot</strong>
           <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Upload a previously saved snapshot to restore data.</p>
           <input type="file" id="inputImportBackup" accept=".json" style="display: none;">
-          <button type="button" id="btnTriggerImportBackup" class="btn-secondary" style="width: 100%;"><i class="fas fa-file-import" style="margin-right: 6px;"></i> Upload Backup (.json)</button>
+          <button type="button" id="btnTriggerImportBackup" class="btn-secondary" style="width: 100%;"><i class="fas fa-file-import"></i> Upload Backup (.json)</button>
         </div>
       </div>
 
@@ -575,6 +575,6 @@
   <!-- TOAST CONTAINER -->
   <div id="toastContainer"></div>
 
-  <script src="crm.js?v=automatic-sync-1"></script>
+  <script src="crm.js?v=past-build-edit-1"></script>
 </body>
 </html>
