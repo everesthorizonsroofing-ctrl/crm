@@ -7,9 +7,7 @@ const CONFIG = {
   SUPABASE_URL: 'https://tlsyjwcgjlypopxtnaig.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_TtFpqZ1-Lhn9XuJlMjpI4Q_ceheITrU',
   GOOGLE_SHEETS_URL: '',        // Paste your Apps Script Web App URL here (optional)
-  CALENDAR_EMBED_URL: '',       // Paste your Google Calendar embed URL here (optional)
   COMPANY_NAME: 'Everest Horizons Roofing',
-  NOTIFY_EMAIL: 'everesthorizonsroofing@gmail.com',
   // Email notifications use formsubmit.co — already active, no setup needed.
 };
 
@@ -19,8 +17,6 @@ const STORAGE_KEYS = {
   builds:         'crm_builds',
   pastBuilds:     'crm_pastBuilds',
   tickets:        'crm_tickets',
-  vault:          'crm_vault_encrypted',
-  calendarUrl:    'crm_calendar_url',
   websiteLeads:   'crm_website_incoming', // bridge key — written by index.html form
 };
 
@@ -253,57 +249,94 @@ function mapDbToItem(tableName, row) {
   return row;
 }
 
-const CLIENT_CHANGES_KEY = 'crm_pending_client_changes';
-let clientSyncRunning = false;
-let clientSyncTimer;
+const CLOUD_TABLES = {
+  pastBuilds: 'past_builds',
+  builds: 'builds',
+  clients: 'clients',
+  leads: 'leads',
+  tickets: 'tickets'
+};
+const SYNC_QUEUE_KEY = 'crm_pending_changes';
+const LEGACY_CLIENT_QUEUE_KEY = 'crm_pending_client_changes';
+const tableWriteVersions = {};
+const tablePullVersions = {};
+let syncInProgress;
+let syncTimer;
 let reconnecting = false;
 let cloudDisconnected = false;
-let clientWriteVersion = 0;
-let clientPullVersion = 0;
 
-function pendingClientChanges() {
-  return JSON.parse(localStorage.getItem(CLIENT_CHANGES_KEY) || '{}');
+function pendingChanges() {
+  const queue = JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || '{}');
+  const legacy = localStorage.getItem(LEGACY_CLIENT_QUEUE_KEY);
+  if (legacy) {
+    const clients = Object.fromEntries(Object.entries(JSON.parse(legacy)).map(([id, change]) => [
+      id, { record: change.client, revision: change.revision }
+    ]));
+    queue.clients = { ...clients, ...queue.clients };
+    localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
+    localStorage.removeItem(LEGACY_CLIENT_QUEUE_KEY);
+  }
+  return queue;
 }
 
-function mergeClientChanges(clients, changes = pendingClientChanges()) {
-  const byId = new Map(clients.map(client => [client.id, client]));
-  for (const [id, change] of Object.entries(changes)) {
-    if (change.client) byId.set(id, change.client);
+function mergeChanges(records, changes) {
+  const byId = new Map(records.map(record => [record.id, record]));
+  for (const [id, change] of Object.entries(changes || {})) {
+    if (change.record) byId.set(id, change.record);
     else byId.delete(id);
   }
   return Array.from(byId.values());
 }
 
-async function syncClientChanges() {
-  if (!supabaseClient || clientSyncRunning) return;
-  clientSyncRunning = true;
+function hasPendingChanges() {
+  return Object.values(pendingChanges()).some(changes => Object.keys(changes).length);
+}
+
+function refreshCloudStatus() {
+  if (hasPendingChanges()) updateCloudIndicator('syncing', 'Changes pending');
+  else if (supabaseClient) updateCloudIndicator('connected', 'Cloud Connected');
+}
+
+function syncPendingChanges() {
+  if (!currentUser || !supabaseClient || !navigator.onLine) return;
+  if (!syncInProgress) {
+    syncInProgress = flushPendingChanges().finally(() => {
+      syncInProgress = null;
+      refreshCloudStatus();
+      updateClientSaveStatus();
+    });
+  }
+  return syncInProgress;
+}
+
+async function flushPendingChanges() {
   const connection = supabaseClient;
   try {
-    while (connection === supabaseClient) {
-      const entry = Object.entries(pendingClientChanges())[0];
-      if (!entry) break;
-      const [id, change] = entry;
-      const table = connection.from('clients');
-      const { error } = change.client
-        ? await table.upsert(mapItemToDb('clients', change.client))
+    while (currentUser && connection === supabaseClient) {
+      const pending = pendingChanges();
+      const key = Object.keys(CLOUD_TABLES).find(key => Object.keys(pending[key] || {}).length);
+      if (!key) return;
+      const [id, change] = Object.entries(pending[key])[0];
+      const tableName = CLOUD_TABLES[key];
+      const table = connection.from(tableName);
+      const { error } = change.record
+        ? await table.upsert(mapItemToDb(tableName, change.record))
         : await table.delete().eq('id', id);
       if (error) throw error;
-      if (connection !== supabaseClient) break;
+      if (connection !== supabaseClient) return;
 
-      const pending = pendingClientChanges();
-      if (pending[id]?.revision === change.revision) {
-        const cached = JSON.parse(localStorage.getItem(STORAGE_KEYS.clients) || '[]');
-        localStorage.setItem(STORAGE_KEYS.clients, JSON.stringify(mergeClientChanges(cached, { [id]: change })));
-        delete pending[id];
-        localStorage.setItem(CLIENT_CHANGES_KEY, JSON.stringify(pending));
+      tableWriteVersions[tableName] = (tableWriteVersions[tableName] || 0) + 1;
+      const latest = pendingChanges();
+      if (latest[key]?.[id]?.revision === change.revision) {
+        const cacheKey = STORAGE_KEYS[key];
+        const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+        localStorage.setItem(cacheKey, JSON.stringify(mergeChanges(cached, { [id]: change })));
+        delete latest[key][id];
+        localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(latest));
       }
-      clientWriteVersion++;
     }
   } catch (error) {
-    console.warn('Client changes are saved locally and will be retried:', error);
-  } finally {
-    clientSyncRunning = false;
-    updateClientSaveStatus();
+    console.warn('CRM changes are saved locally and will be retried:', error);
   }
 }
 
@@ -311,68 +344,17 @@ function updateClientSaveStatus() {
   const status = document.getElementById('clientSaveStatus');
   const id = document.getElementById('clientId').value;
   if (!id) return;
-  status.textContent = pendingClientChanges()[id]
+  status.textContent = pendingChanges().clients?.[id]
     ? 'Saved on this device. Waiting for cloud sync.'
     : 'Saved to cloud.';
-}
-
-async function syncTableToSupabase(key, data) {
-  if (!supabaseClient) return;
-  const tableMap = {
-    leads: 'leads',
-    clients: 'clients',
-    builds: 'builds',
-    pastBuilds: 'past_builds',
-    tickets: 'tickets'
-  };
-  const tableName = tableMap[key];
-  if (!tableName) return;
-
-  try {
-    updateCloudIndicator('syncing', 'Syncing...');
-    const dbRows = data.map(item => mapItemToDb(tableName, item));
-    if (dbRows.length > 0) {
-      const { error: upErr } = await supabaseClient.from(tableName).upsert(dbRows);
-      if (upErr) console.warn('Supabase upsert warning:', upErr);
-    }
-    updateCloudIndicator('connected', 'Cloud Synced');
-  } catch (err) {
-    console.warn('Supabase sync error for ' + tableName, err);
-    updateCloudIndicator('error', 'Sync Error');
-  }
-}
-
-async function deleteFromSupabase(key, idOrIds) {
-  if (key === 'clients') return; // Client deletes use the persistent queue.
-  if (!supabaseClient) return;
-  const tableMap = {
-    leads: 'leads',
-    clients: 'clients',
-    builds: 'builds',
-    pastBuilds: 'past_builds',
-    tickets: 'tickets'
-  };
-  const tableName = tableMap[key];
-  if (!tableName) return;
-
-  try {
-    if (Array.isArray(idOrIds)) {
-      if (idOrIds.length > 0) {
-        await supabaseClient.from(tableName).delete().in('id', idOrIds);
-      }
-    } else if (idOrIds) {
-      await supabaseClient.from(tableName).delete().eq('id', idOrIds);
-    }
-  } catch (err) {
-    console.warn(`Error deleting from Supabase ${tableName}:`, err);
-  }
 }
 
 async function pullTableFromCloud(tableName) {
   if (!supabaseClient) return;
   const connection = supabaseClient;
-  const writeVersion = clientWriteVersion;
-  const pullVersion = tableName === 'clients' ? ++clientPullVersion : 0;
+  const writeVersion = tableWriteVersions[tableName];
+  const pullVersion = (tablePullVersions[tableName] || 0) + 1;
+  tablePullVersions[tableName] = pullVersion;
   try {
     let query = connection.from(tableName).select('*');
     if (tableName === 'tickets' || tableName === 'leads') {
@@ -380,24 +362,13 @@ async function pullTableFromCloud(tableName) {
     }
     const { data, error } = await query;
     if (error || !data || connection !== supabaseClient) return;
-    if (tableName === 'clients' && (writeVersion !== clientWriteVersion || pullVersion !== clientPullVersion)) return;
+    if (writeVersion !== tableWriteVersions[tableName] || pullVersion !== tablePullVersions[tableName]) return;
 
-    const reverseMap = {
-      leads: 'leads',
-      clients: 'clients',
-      builds: 'builds',
-      past_builds: 'pastBuilds',
-      tickets: 'tickets'
-    };
-    const storageKey = reverseMap[tableName];
+    const storageKey = Object.keys(CLOUD_TABLES).find(key => CLOUD_TABLES[key] === tableName);
     if (!storageKey) return;
 
-    const mapped = data.map(r => mapDbToItem(tableName, r));
-    if (storageKey === 'clients') {
-      localStorage.setItem(STORAGE_KEYS.clients, JSON.stringify(mapped));
-    } else {
-      setData(storageKey, mapped, false);
-    }
+    const mapped = data.map(row => mapDbToItem(tableName, row));
+    localStorage.setItem(STORAGE_KEYS[storageKey], JSON.stringify(mapped));
 
     if (storageKey === 'leads') renderLeads();
     else if (storageKey === 'clients') renderClients();
@@ -412,13 +383,8 @@ async function pullTableFromCloud(tableName) {
 async function pullAllFromCloud() {
   if (!supabaseClient) return;
   updateCloudIndicator('syncing', 'Syncing Cloud...');
-  const tables = ['tickets', 'leads', 'clients', 'builds', 'past_builds'];
-  for (const t of tables) {
-    await pullTableFromCloud(t);
-  }
-  localStorage.setItem('crm_tickets_seeded', 'true');
-  localStorage.setItem('crm_leads_seeded', 'true');
-  updateCloudIndicator('connected', 'Cloud Connected');
+  await Promise.all(Object.values(CLOUD_TABLES).map(pullTableFromCloud));
+  refreshCloudStatus();
 }
 
 function setupRealtimeSubscriptions() {
@@ -460,7 +426,7 @@ async function initSupabase(showFeedback = false) {
 
     updateCloudIndicator('connected', 'Cloud Connected');
     setupRealtimeSubscriptions();
-    await syncClientChanges();
+    await syncPendingChanges();
     await pullAllFromCloud();
 
     if (showFeedback) showToast('Connected to Supabase! Live sync active.');
@@ -477,33 +443,27 @@ async function initSupabase(showFeedback = false) {
 function getData(key) {
   const raw = localStorage.getItem(STORAGE_KEYS[key]);
   const data = raw ? JSON.parse(raw) : [];
-  return key === 'clients' ? mergeClientChanges(data) : data;
+  return mergeChanges(data, pendingChanges()[key]);
 }
 
-function setData(key, data, syncCloud = true) {
-  if (key === 'clients') {
-    const before = new Map(getData('clients').map(client => [client.id, client]));
-    const changes = pendingClientChanges();
-    for (const client of data) {
-      if (JSON.stringify(before.get(client.id)) !== JSON.stringify(client)) {
-        changes[client.id] = { client, revision: generateId() };
-      }
-      before.delete(client.id);
+function setData(key, data) {
+  const before = new Map(getData(key).map(record => [record.id, record]));
+  const queue = pendingChanges();
+  const changes = queue[key] ||= {};
+  for (const record of data) {
+    if (JSON.stringify(before.get(record.id)) !== JSON.stringify(record)) {
+      changes[record.id] = { record, revision: generateId() };
     }
-    for (const id of before.keys()) {
-      changes[id] = { client: null, revision: generateId() };
-    }
-    localStorage.setItem(CLIENT_CHANGES_KEY, JSON.stringify(changes));
-    syncToSheets(key, data);
-    window.clearTimeout(clientSyncTimer);
-    clientSyncTimer = window.setTimeout(syncClientChanges, 450);
-    return;
+    before.delete(record.id);
   }
-  localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(data));
+  for (const id of before.keys()) {
+    changes[id] = { record: null, revision: generateId() };
+  }
+  localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
   syncToSheets(key, data);
-  if (syncCloud && supabaseClient) {
-    syncTableToSupabase(key, data);
-  }
+  refreshCloudStatus();
+  window.clearTimeout(syncTimer);
+  syncTimer = window.setTimeout(syncPendingChanges, 450);
 }
 
 async function syncToSheets(key, data) {
@@ -637,9 +597,6 @@ async function sendNotification(type, payload) {
   }
 }
 
-// No init needed for formsubmit.co
-function initEmailJS() {}
-
 /* ==========================================================================
    WEBSITE LEAD BRIDGE
    When a visitor submits the inspection form on index.html, the lead is
@@ -655,8 +612,6 @@ function importWebsiteLeads() {
   let incoming;
   try { incoming = JSON.parse(raw); } catch { return; }
   if (!Array.isArray(incoming) || incoming.length === 0) return;
-
-  localStorage.removeItem(STORAGE_KEYS.websiteLeads);
 
   const leads = getData('leads');
   incoming.forEach(lead => {
@@ -678,6 +633,7 @@ function importWebsiteLeads() {
   });
 
   setData('leads', leads);
+  localStorage.removeItem(STORAGE_KEYS.websiteLeads);
   renderLeads();
   updateWebsiteLeadsBadge(0);
 
@@ -705,65 +661,6 @@ function checkWebsiteLeadsBadge() {
   } catch { updateWebsiteLeadsBadge(0); }
 }
 
-
-/* ==========================================================================
-   4. VAULT (AES-256-GCM)
-   ========================================================================== */
-const VAULT_SALT = 'EverestCRMVaultSalt2024';
-
-async function deriveVaultKey(password) {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: enc.encode(VAULT_SALT), iterations: 100000, hash: 'SHA-256' },
-    keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-}
-
-async function encryptPassword(plaintext) {
-  if (!vaultKey) throw new Error('No vault key');
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const enc = new TextEncoder();
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, vaultKey, enc.encode(plaintext));
-  const toB64 = arr => btoa(String.fromCharCode(...new Uint8Array(arr)));
-  return `${toB64(iv)}:${toB64(ciphertext)}`;
-}
-
-async function decryptPassword(encrypted) {
-  if (!vaultKey) throw new Error('No vault key');
-  if (!encrypted) return '';
-  try {
-    const [ivB64, ctB64] = encrypted.split(':');
-    const fromB64 = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    const iv = fromB64(ivB64);
-    const ciphertext = fromB64(ctB64);
-    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, vaultKey, ciphertext);
-    return new TextDecoder().decode(decrypted);
-  } catch(e) {
-    console.error(e);
-    return 'ERROR_DECRYPT';
-  }
-}
-
-const VAULT_PRESEEDED = [
-  { service: 'Gmail', icon: '📧', username: 'everesthorizonsroofing@gmail.com', email: 'everesthorizonsroofing@gmail.com', url: 'https://mail.google.com', notes: 'Main business email', passwordEncrypted: null },
-  { service: 'Outlook (Pool)', icon: '📮', username: 'info@everestgreenhorizons.com', email: 'info@everestgreenhorizons.com', url: 'https://outlook.com', notes: 'Pool business email', passwordEncrypted: null },
-  { service: 'Instagram', icon: '📸', username: 'everestgreenhorizons', email: '', url: 'https://instagram.com', notes: '@everestgreenhorizons', passwordEncrypted: null },
-  { service: 'Facebook', icon: '👤', username: '817-403-8418', email: '', url: 'https://facebook.com', notes: 'Login with phone number', passwordEncrypted: null },
-];
-
-function getVaultEntries() {
-  const raw = localStorage.getItem(STORAGE_KEYS.vault);
-  if (!raw) {
-    const entries = VAULT_PRESEEDED.map(e => ({ ...e, id: generateId(), addedAt: new Date().toISOString() }));
-    setData('vault', entries);
-    return entries;
-  }
-  return JSON.parse(raw);
-}
 
 /* ==========================================================================
    5. BULK SELECTION & ACTION MANAGER
@@ -868,11 +765,9 @@ window.bulkDelete = function(entity) {
   if (!confirm(`Are you sure you want to delete ${count} selected item(s)?`)) return;
 
   const storageKey = entity;
-  const idsToDelete = Array.from(set);
   let items = getData(storageKey);
   items = items.filter(item => !set.has(item.id));
-  setData(storageKey, items, false);
-  deleteFromSupabase(storageKey, idsToDelete);
+  setData(storageKey, items);
   set.clear();
   updateBulkBar(entity);
 
@@ -890,99 +785,6 @@ window.bulkDelete = function(entity) {
    ========================================================================== */
 
 // --- LEADS ---
-const INITIAL_LEADS = [
-  {
-    name: 'Reynier Torres',
-    phone: '786-803-1254',
-    email: '',
-    address: '',
-    source: 'Instagram',
-    status: 'New',
-    notes: 'We need send design to the client and follow up',
-    dateAdded: '2026-09-06T12:00:00.000Z'
-  },
-  {
-    name: 'Matthew Stellfox',
-    phone: '',
-    email: '',
-    address: '',
-    source: 'Messenger',
-    status: 'New',
-    notes: 'Interested in $52k pool - follow up',
-    dateAdded: '2026-09-06T12:00:00.000Z'
-  },
-  {
-    name: 'Joseph Brent Satterfield',
-    phone: '',
-    email: '',
-    address: '',
-    source: 'Messenger',
-    status: 'New',
-    notes: 'Waiting for their reply',
-    dateAdded: '2026-09-06T12:00:00.000Z'
-  },
-  {
-    name: 'Kristy Morris Page',
-    phone: '',
-    email: '',
-    address: '',
-    source: 'Messenger',
-    status: 'New',
-    notes: 'Client wants design - Possible Feb build',
-    dateAdded: '2026-09-06T12:00:00.000Z'
-  },
-  {
-    name: 'Keren Stallin',
-    phone: '469-888-3065',
-    email: '',
-    address: '',
-    source: 'Messenger',
-    status: 'New',
-    notes: 'Consultation done - follow up',
-    dateAdded: '2026-09-06T12:00:00.000Z'
-  },
-  {
-    name: 'Kay West Parrish',
-    phone: '817-343-0311',
-    email: '',
-    address: '',
-    source: 'Messenger',
-    status: 'New',
-    notes: 'Consultation done, survey received',
-    dateAdded: '2026-09-06T12:00:00.000Z'
-  },
-  {
-    name: 'Gabriel Sellan',
-    phone: '',
-    email: '',
-    address: '',
-    source: 'Instagram',
-    status: 'New',
-    notes: 'Asked for survey - waiting Follow up',
-    dateAdded: '2026-09-06T12:00:00.000Z'
-  }
-];
-
-function seedInitialLeads(force = false) {
-  const existing = getData('leads');
-  if (existing.length === 0 || force) {
-    const leads = INITIAL_LEADS.map(l => ({
-      id: generateId(),
-      name: l.name,
-      phone: l.phone,
-      email: l.email || '',
-      address: l.address || '',
-      source: l.source,
-      status: l.status,
-      dateAdded: l.dateAdded || new Date().toISOString(),
-      notes: l.notes,
-      archived: false
-    }));
-    setData('leads', leads, false);
-    localStorage.setItem('crm_leads_seeded', 'true');
-  }
-}
-
 function renderLeads() {
   const leads = getData('leads').filter(l => !l.archived);
   const srcFilter = document.getElementById('filterLeadSource').value;
@@ -1051,13 +853,11 @@ window.editLead = function(id) {
 window.deleteLead = function(id) {
   if (!confirm('Are you sure you want to delete this lead?')) return;
   const leads = getData('leads').filter(l => l.id !== id);
-  setData('leads', leads, false);
-  deleteFromSupabase('leads', id);
+  setData('leads', leads);
   SELECTED_ITEMS.leads.delete(id);
   renderLeads();
   showToast('Lead deleted');
 };
-window.archiveLead = window.deleteLead;
 
 window.promoteLead = function(id) {
   if(!confirm('Promote lead to Potential Client?')) return;
@@ -1130,7 +930,7 @@ function renderClients() {
 window.deleteClient = function(id) {
   if (!confirm('Are you sure you want to remove this client?')) return;
   const clients = getData('clients').filter(c => c.id !== id);
-  setData('clients', clients, false);
+  setData('clients', clients);
   SELECTED_ITEMS.clients.delete(id);
   renderClients();
   showToast('Client removed');
@@ -1218,8 +1018,7 @@ function renderBuilds() {
 window.deleteBuild = function(id) {
   if (!confirm('Are you sure you want to delete this build?')) return;
   const builds = getData('builds').filter(b => b.id !== id);
-  setData('builds', builds, false);
-  deleteFromSupabase('builds', id);
+  setData('builds', builds);
   SELECTED_ITEMS.builds.delete(id);
   renderBuilds();
   showToast('Build deleted');
@@ -1300,8 +1099,7 @@ function renderPastBuilds() {
 window.deletePastBuild = function(id) {
   if (!confirm('Are you sure you want to remove this past build?')) return;
   const past = getData('pastBuilds').filter(p => p.id !== id);
-  setData('pastBuilds', past, false);
-  deleteFromSupabase('pastBuilds', id);
+  setData('pastBuilds', past);
   SELECTED_ITEMS.pastBuilds.delete(id);
   renderPastBuilds();
   showToast('Past build removed');
@@ -1523,30 +1321,6 @@ document.getElementById('btnExportTickets')?.addEventListener('click', () => {
 });
 
 // --- TASKS (List View: Description, State, Assigned to) ---
-const INITIAL_TICKETS = [
-  { description: 'Roofing Website', assignee: 'KN', status: 'In Progress' },
-  { description: 'Pool Website', assignee: 'KN', status: 'Pending' },
-  { description: 'Pool Social Media', assignee: 'KN', status: 'Pending' },
-  { description: 'Build a CRM', assignee: 'KN', status: 'In Progress' },
-  { description: 'Automated Text to AK for Critical To-Dos', assignee: 'Unassigned', status: 'Pending' },
-  { description: 'Roofing Metal & Spanish Style Clay Pricing', assignee: 'AK', status: 'Pending' },
-  { description: 'Google Review Boost', assignee: 'Unassigned', status: 'Pending' },
-  { description: 'Business Phone Number Setup', assignee: 'Unassigned', status: 'Pending' },
-];
-
-function seedInitialTickets() {
-  if (localStorage.getItem('crm_tickets_seeded')) return;
-  const tickets = INITIAL_TICKETS.map(t => ({
-    id: generateId(),
-    description: t.description,
-    status: t.status,
-    assignee: t.assignee,
-    createdAt: new Date().toISOString(),
-  }));
-  setData('tickets', tickets, false);
-  localStorage.setItem('crm_tickets_seeded', 'true');
-}
-
 function normalizeTaskStatus(status) {
   const s = (status || '').toLowerCase().trim();
   if (s.includes('progress')) return 'In Progress';
@@ -1630,169 +1404,12 @@ window.openTicketModal = function(id) {
 window.deleteTicket = function(id) {
   if (!confirm('Are you sure you want to delete this task?')) return;
   const tickets = getData('tickets').filter(t => t.id !== id);
-  setData('tickets', tickets, false);
-  deleteFromSupabase('tickets', id);
+  setData('tickets', tickets);
   SELECTED_ITEMS.tickets.delete(id);
   closeModal('modalTicket');
   renderTickets();
   showToast('Task deleted');
 };
-
-
-document.getElementById('ticketDrawerClose').addEventListener('click', () => {
-  document.getElementById('ticketDrawer').classList.remove('open');
-  currentDrawerTicketId = null;
-});
-
-function logTicketEvent(ticket, action) {
-  if(!ticket.history) ticket.history = [];
-  ticket.history.push({ action, by: currentUser.displayName, timestamp: new Date().toISOString() });
-}
-
-document.getElementById('drawerStatus').addEventListener('change', e => {
-  if(!currentDrawerTicketId) return;
-  const tickets = getData('tickets');
-  const t = tickets.find(x => x.id === currentDrawerTicketId);
-  if(t) {
-    const old = t.status;
-    t.status = e.target.value;
-    logTicketEvent(t, `changed status from ${old} to ${t.status}`);
-    setData('tickets', tickets);
-    renderTickets();
-    if (t.status === 'Done' && old !== 'Done') sendNotification('ticket_done', t);
-    showToast('Ticket updated');
-  }
-});
-
-document.getElementById('drawerAssignee').addEventListener('change', e => {
-  if(!currentDrawerTicketId) return;
-  const tickets = getData('tickets');
-  const t = tickets.find(x => x.id === currentDrawerTicketId);
-  if(t) {
-    const old = t.assignee;
-    t.assignee = e.target.value;
-    logTicketEvent(t, `changed assignee from ${old} to ${t.assignee}`);
-    setData('tickets', tickets);
-    renderTickets();
-    showToast('Ticket updated');
-  }
-});
-
-document.getElementById('btnPostComment').addEventListener('click', () => {
-  const input = document.getElementById('drawerCommentInput');
-  const text = input.value.trim();
-  if(!text || !currentDrawerTicketId) return;
-  
-  const tickets = getData('tickets');
-  const t = tickets.find(x => x.id === currentDrawerTicketId);
-  if(t) {
-    if(!t.comments) t.comments = [];
-    t.comments.push({ id: generateId(), author: currentUser.displayName, text, timestamp: new Date().toISOString() });
-    logTicketEvent(t, 'added a comment');
-    setData('tickets', tickets);
-    input.value = '';
-    window.openTicketDrawer(t.id); // Re-render drawer
-    showToast('Comment posted');
-  }
-});
-
-
-// --- VAULT ---
-async function renderVault() {
-  if(currentUser.role !== 'admin') return;
-  const entries = getVaultEntries();
-  const grid = document.getElementById('vaultGrid');
-  grid.innerHTML = '';
-  
-  for (const e of entries) {
-    const card = document.createElement('div');
-    card.className = 'vault-card';
-    
-    let pwdDisplay = '';
-    if(e.passwordEncrypted) {
-      try {
-        const dec = await decryptPassword(e.passwordEncrypted);
-        pwdDisplay = `<div class="pwd-masked" id="pwd-${e.id}">••••••••</div>
-                      <button class="btn-secondary btn-sm" onclick="toggleVaultPwd('${e.id}', '${dec.replace(/'/g, "\\'")}')" title="Reveal"><i class="fas fa-eye"></i></button>
-                      <button class="btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${dec.replace(/'/g, "\\'")}'); showToast('Password copied')" title="Copy"><i class="fas fa-copy"></i></button>`;
-      } catch(err) {
-        pwdDisplay = `<div class="pwd-masked" style="color:red">Error decrypting</div>`;
-      }
-    } else {
-      pwdDisplay = `<div class="pwd-masked" style="color:var(--brand-gold); font-weight:bold;">⚠️ Add password</div>`;
-    }
-
-    card.innerHTML = `
-      <div class="vault-actions">
-        <button class="btn-secondary btn-sm" onclick="editVaultEntry('${e.id}')"><i class="fas fa-edit"></i></button>
-        <button class="btn-danger btn-sm" onclick="deleteVaultEntry('${e.id}')"><i class="fas fa-trash"></i></button>
-      </div>
-      <span class="icon">${e.icon || '🔑'}</span>
-      <h3 style="margin-bottom:10px;">${e.service}</h3>
-      <div style="font-size:12px; margin-bottom:5px;"><strong>User:</strong> ${e.username || '-'}</div>
-      <div style="font-size:12px; margin-bottom:10px;"><strong>Email:</strong> ${e.email || '-'}</div>
-      <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
-        ${pwdDisplay}
-      </div>
-      ${e.url ? `<a href="${e.url}" target="_blank" style="font-size:12px; color:var(--brand-gold);">Open Link <i class="fas fa-external-link-alt"></i></a>` : ''}
-    `;
-    grid.appendChild(card);
-  }
-}
-
-window.toggleVaultPwd = function(id, pwd) {
-  const el = document.getElementById(`pwd-${id}`);
-  if(el.innerText === '••••••••') el.innerText = pwd;
-  else el.innerText = '••••••••';
-};
-
-window.editVaultEntry = async function(id) {
-  const entries = getVaultEntries();
-  const e = entries.find(x => x.id === id);
-  if(!e) return;
-  document.getElementById('vaultId').value = e.id;
-  document.getElementById('vaultService').value = e.service;
-  document.getElementById('vaultIcon').value = e.icon;
-  document.getElementById('vaultUrl').value = e.url;
-  document.getElementById('vaultUsername').value = e.username;
-  document.getElementById('vaultEmail').value = e.email;
-  document.getElementById('vaultNotes').value = e.notes;
-  document.getElementById('vaultPassword').value = e.passwordEncrypted ? await decryptPassword(e.passwordEncrypted) : '';
-  document.getElementById('modalVaultTitle').innerText = 'Edit Vault Entry';
-  openModal('modalVaultEntry');
-}
-
-window.deleteVaultEntry = function(id) {
-  if(!confirm('Delete this vault entry?')) return;
-  const entries = getVaultEntries().filter(e => e.id !== id);
-  setData('vault', entries);
-  renderVault();
-  showToast('Vault entry deleted');
-}
-
-// --- CALENDAR ---
-window.openGCalForLead = function(id) {
-  const lead = getData('leads').find(l => l.id === id);
-  if(!lead) return;
-  const title = encodeURIComponent(`Estimate: ${lead.name}`);
-  const location = encodeURIComponent(lead.address || '');
-  const details = encodeURIComponent(`Phone: ${lead.phone}\nNotes: ${lead.notes}`);
-  window.open(`https://calendar.google.com/calendar/r/eventedit?text=${title}&location=${location}&details=${details}`, '_blank');
-}
-
-function loadCalendar() {
-  const calUrl = localStorage.getItem(STORAGE_KEYS.calendarUrl);
-  const container = document.getElementById('calendarContainer');
-  if(calUrl) {
-    document.getElementById('calendarUrlInput').value = calUrl;
-    container.innerHTML = `<iframe src="${calUrl}" style="border: 0" width="100%" height="100%" frameborder="0" scrolling="no"></iframe>`;
-  } else {
-    container.innerHTML = `<div class="calendar-placeholder">No Calendar Configured</div>`;
-  }
-}
-
-
-
 
 
 /* ==========================================================================
@@ -1926,8 +1543,7 @@ document.getElementById('formBuild').addEventListener('submit', e => {
       if(!isNew) {
         const idx = builds.findIndex(b => b.id === id);
         if(idx > -1) builds.splice(idx, 1);
-        setData('builds', builds, false);
-        deleteFromSupabase('builds', id);
+        setData('builds', builds);
       }
       closeBuildForm(e.currentTarget);
       renderBuilds();
@@ -1981,54 +1597,6 @@ document.getElementById('formTicket').addEventListener('submit', e => {
   showToast(isNew ? 'Task created' : 'Task updated');
 });
 
-document.getElementById('formVaultEntry').addEventListener('submit', async e => {
-  e.preventDefault();
-  if(currentUser.role !== 'admin') return;
-  
-  const id = document.getElementById('vaultId').value;
-  const isNew = !id;
-  const pwd = document.getElementById('vaultPassword').value;
-  
-  let enc = null;
-  if(pwd) {
-    try {
-      enc = await encryptPassword(pwd);
-    } catch(err) {
-      showToast('Encryption error', 'error');
-      return;
-    }
-  }
-
-  const entry = {
-    id: isNew ? generateId() : id,
-    service: document.getElementById('vaultService').value,
-    icon: document.getElementById('vaultIcon').value,
-    url: document.getElementById('vaultUrl').value,
-    username: document.getElementById('vaultUsername').value,
-    email: document.getElementById('vaultEmail').value,
-    notes: document.getElementById('vaultNotes').value,
-    passwordEncrypted: enc,
-    addedAt: isNew ? new Date().toISOString() : getVaultEntries().find(x=>x.id===id).addedAt
-  };
-
-  const entries = getVaultEntries();
-  if(isNew) entries.push(entry);
-  else {
-    const idx = entries.findIndex(x => x.id === id);
-    if(idx > -1) {
-      if(!pwd && entries[idx].passwordEncrypted) {
-        entry.passwordEncrypted = entries[idx].passwordEncrypted; // preserve if untouched
-      }
-      entries[idx] = entry;
-    }
-  }
-  setData('vault', entries);
-  closeModal('modalVaultEntry');
-  renderVault();
-  showToast('Vault entry saved');
-});
-
-
 /* ==========================================================================
    7. UI UTILS & EVENT LISTENERS
    ========================================================================== */
@@ -2063,8 +1631,6 @@ function showSection(sectionName) {
   if (sectionName === 'builds') renderBuilds();
   if (sectionName === 'pastbuilds') renderPastBuilds();
   if (sectionName === 'tickets') renderTickets();
-  if (sectionName === 'vault') renderVault();
-  if (sectionName === 'calendar') loadCalendar();
 }
 
 function openModal(modalId) {
@@ -2073,12 +1639,11 @@ function openModal(modalId) {
     const status = document.getElementById('clientSaveStatus');
     status.textContent = 'Changes save automatically.';
     if (!document.getElementById('clientId').value) document.getElementById('formClient').reset();
-    else if (pendingClientChanges()[document.getElementById('clientId').value]) updateClientSaveStatus();
+    else if (pendingChanges().clients?.[document.getElementById('clientId').value]) updateClientSaveStatus();
   }
   if(modalId === 'modalBuild' && !document.getElementById('buildId').value) document.getElementById('formBuild').reset();
   if(modalId === 'modalPastBuild' && !document.getElementById('pastBuildId').value) document.getElementById('formPastBuild').reset();
   if(modalId === 'modalTicket' && !document.getElementById('ticketId').value) document.getElementById('formTicket').reset();
-  if(modalId === 'modalVaultEntry' && !document.getElementById('vaultId').value) document.getElementById('formVaultEntry').reset();
   
   document.getElementById(modalId).classList.add('open');
 }
@@ -2280,24 +1845,7 @@ async function initApp() {
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  // 1. Connect to Supabase Cloud & pull fresh live data
-  const cloudConnected = await initSupabase();
-
-  // 2. Only seed fallback demo data if Supabase is completely disconnected and local storage is empty
-  if (!cloudConnected) {
-    if (!localStorage.getItem('crm_tickets_seeded') && getData('tickets').length === 0) {
-      seedInitialTickets();
-    }
-    if (!localStorage.getItem('crm_leads_seeded') && getData('leads').length === 0) {
-      seedInitialLeads();
-    }
-  } else {
-    // Supabase is active: mark seeded flags so dummy seeding never runs
-    localStorage.setItem('crm_tickets_seeded', 'true');
-    localStorage.setItem('crm_leads_seeded', 'true');
-  }
-
-  initEmailJS();
+  await initSupabase();
   checkWebsiteLeadsBadge();
 
   showSection('tickets');
@@ -2357,13 +1905,6 @@ document.getElementById('btnDisconnectSupabase')?.addEventListener('click', () =
   showToast('Disconnected from Supabase Cloud');
 });
 
-// Force Cloud Sync & Settings Toggle
-document.getElementById('btnForceSync')?.addEventListener('click', async () => {
-  showToast('Syncing with Supabase Cloud...');
-  await pullAllFromCloud();
-  showToast('All CRM tables up to date!');
-});
-
 document.getElementById('btnToggleConfigFields')?.addEventListener('click', () => {
   const fields = document.getElementById('cloudConfigFields');
   if (fields) {
@@ -2411,14 +1952,12 @@ document.getElementById('inputImportBackup')?.addEventListener('change', e => {
     try {
       const data = JSON.parse(ev.target.result);
       if (!data || typeof data !== 'object') throw new Error('Invalid backup file format');
-      if (Array.isArray(data.leads)) setData('leads', data.leads);
-      if (Array.isArray(data.clients)) setData('clients', data.clients);
-      if (Array.isArray(data.builds)) setData('builds', data.builds);
-      if (Array.isArray(data.pastBuilds)) setData('pastBuilds', data.pastBuilds);
-      if (Array.isArray(data.tickets)) setData('tickets', data.tickets);
-
-      localStorage.setItem('crm_leads_seeded', 'true');
-      localStorage.setItem('crm_tickets_seeded', 'true');
+      for (const key of Object.keys(CLOUD_TABLES)) {
+        if (!Array.isArray(data[key])) continue;
+        const records = new Map(getData(key).map(record => [record.id, record]));
+        for (const record of data[key]) records.set(record.id, record);
+        setData(key, Array.from(records.values()));
+      }
 
       renderTickets();
       renderLeads();
@@ -2443,10 +1982,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-async function retryClientSync() {
+async function retryCloudSync() {
   if (!currentUser || !navigator.onLine || cloudDisconnected || reconnecting) return;
   if (supabaseClient) {
-    if (Object.keys(pendingClientChanges()).length) await syncClientChanges();
+    if (hasPendingChanges()) await syncPendingChanges();
     return;
   }
 
@@ -2460,7 +1999,7 @@ async function retryClientSync() {
 
 window.addEventListener('online', async () => {
   const wasConnected = Boolean(supabaseClient);
-  await retryClientSync();
-  if (currentUser && wasConnected && supabaseClient) await pullTableFromCloud('clients');
+  await retryCloudSync();
+  if (currentUser && wasConnected && supabaseClient) await pullAllFromCloud();
 });
-window.setInterval(retryClientSync, 5000);
+window.setInterval(retryCloudSync, 5000);

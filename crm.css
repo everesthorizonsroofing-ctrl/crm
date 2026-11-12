@@ -240,14 +240,6 @@ button { cursor: pointer; border: none; outline: none; font-family: inherit; tra
 .card-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
 .card-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
 
-/* Vault */
-.vault-banner { background: #fefce8; border: 1px solid #fef08a; color: #854d0e; padding: 12px; border-radius: var(--radius); margin-bottom: 20px; }
-.vault-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-.vault-card { background: var(--card-bg); padding: 20px; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border); position: relative; }
-.vault-card .icon { font-size: 2rem; margin-bottom: 10px; display: block; }
-.vault-actions { position: absolute; top: 15px; right: 15px; display: flex; gap: 5px; }
-.pwd-masked { font-family: var(--font-mono); background: #f1f5f9; padding: 6px 10px; border-radius: 4px; flex: 1; font-size: 13px; letter-spacing: 0.05em; }
-
 /* Modals */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(2px); display: none; align-items: center; justify-content: center; z-index: 1000; }
 .modal-overlay.open { display: flex; }
@@ -257,25 +249,6 @@ button { cursor: pointer; border: none; outline: none; font-family: inherit; tra
 .modal-close:hover { color: var(--danger); }
 .modal-card form { padding: 20px; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border); }
-
-/* Ticket Drawer */
-.drawer { position: fixed; right: 0; top: 0; width: 400px; height: 100vh; background: var(--card-bg); box-shadow: -2px 0 10px rgba(0,0,0,0.1); transform: translateX(100%); transition: transform 0.3s ease; z-index: 900; display: flex; flex-direction: column; }
-.drawer.open { transform: translateX(0); }
-.drawer-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #f8fafc; }
-.drawer-content { padding: 20px; overflow-y: auto; flex: 1; }
-.drawer-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
-.drawer-section { margin-bottom: 20px; }
-.history-list { list-style: none; font-size: 12px; color: var(--text-muted); }
-.history-list li { margin-bottom: 5px; padding-left: 10px; border-left: 2px solid var(--border); }
-.comments-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
-.comment { background: #f1f5f9; padding: 10px; border-radius: 8px; font-size: 13px; }
-.comment-author { font-weight: 600; margin-bottom: 4px; display: flex; justify-content: space-between; }
-.comment-input-area { display: flex; flex-direction: column; gap: 10px; }
-
-/* Calendar Section */
-.calendar-setup-box { background: #e0f2fe; padding: 15px; border-radius: var(--radius); margin-bottom: 20px; border: 1px solid #bae6fd; }
-.calendar-container { height: 600px; background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); position: relative; }
-.calendar-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 18px; }
 
 /* View Toggle */
 .view-toggle { display: flex; background: #f1f5f9; border-radius: 6px; padding: 2px; }
@@ -577,12 +550,6 @@ button { cursor: pointer; border: none; outline: none; font-family: inherit; tra
     font-weight: 600;
     justify-content: center;
     border-radius: 8px;
-  }
-
-  /* Drawer on Phone */
-  .drawer {
-    width: 100%;
-    max-width: 100%;
   }
 }
 
@@ -941,7 +908,7 @@ tr.row-selected {
   border-color: var(--brand-gold);
 }
 
-/* Dark Mode Modals & Drawer */
+/* Dark Mode Modals */
 [data-theme="dark"] .modal-overlay {
   background: rgba(0, 0, 0, 0.75);
 }
@@ -963,49 +930,6 @@ tr.row-selected {
 
 [data-theme="dark"] .modal-close:hover {
   color: var(--danger);
-}
-
-[data-theme="dark"] .drawer {
-  background: #141b2a;
-  border-left: 1px solid #232d3f;
-  color: #f8fafc;
-}
-
-[data-theme="dark"] .drawer-header {
-  background: #0d1320;
-  border-color: #232d3f;
-}
-
-[data-theme="dark"] .comment {
-  background: #0d1320;
-  color: #e2e8f0;
-}
-
-/* Dark Mode Vault & Calendar */
-[data-theme="dark"] .vault-banner {
-  background: rgba(212, 160, 23, 0.15);
-  border-color: rgba(212, 160, 23, 0.3);
-  color: #facc15;
-}
-
-[data-theme="dark"] .vault-card {
-  background: #141b2a;
-  border-color: #232d3f;
-}
-
-[data-theme="dark"] .pwd-masked {
-  background: #0d1320;
-  color: #cbd5e1;
-}
-
-[data-theme="dark"] .calendar-setup-box {
-  background: #0d1320;
-  border-color: #232d3f;
-  color: #94a3b8;
-}
-
-[data-theme="dark"] .calendar-container {
-  background: #141b2a;
 }
 
 /* Dark Mode Toasts & Login */
