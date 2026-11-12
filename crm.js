@@ -253,6 +253,69 @@ function mapDbToItem(tableName, row) {
   return row;
 }
 
+const CLIENT_CHANGES_KEY = 'crm_pending_client_changes';
+let clientSyncRunning = false;
+let clientSyncTimer;
+let reconnecting = false;
+let cloudDisconnected = false;
+let clientWriteVersion = 0;
+let clientPullVersion = 0;
+
+function pendingClientChanges() {
+  return JSON.parse(localStorage.getItem(CLIENT_CHANGES_KEY) || '{}');
+}
+
+function mergeClientChanges(clients, changes = pendingClientChanges()) {
+  const byId = new Map(clients.map(client => [client.id, client]));
+  for (const [id, change] of Object.entries(changes)) {
+    if (change.client) byId.set(id, change.client);
+    else byId.delete(id);
+  }
+  return Array.from(byId.values());
+}
+
+async function syncClientChanges() {
+  if (!supabaseClient || clientSyncRunning) return;
+  clientSyncRunning = true;
+  const connection = supabaseClient;
+  try {
+    while (connection === supabaseClient) {
+      const entry = Object.entries(pendingClientChanges())[0];
+      if (!entry) break;
+      const [id, change] = entry;
+      const table = connection.from('clients');
+      const { error } = change.client
+        ? await table.upsert(mapItemToDb('clients', change.client))
+        : await table.delete().eq('id', id);
+      if (error) throw error;
+      if (connection !== supabaseClient) break;
+
+      const pending = pendingClientChanges();
+      if (pending[id]?.revision === change.revision) {
+        const cached = JSON.parse(localStorage.getItem(STORAGE_KEYS.clients) || '[]');
+        localStorage.setItem(STORAGE_KEYS.clients, JSON.stringify(mergeClientChanges(cached, { [id]: change })));
+        delete pending[id];
+        localStorage.setItem(CLIENT_CHANGES_KEY, JSON.stringify(pending));
+      }
+      clientWriteVersion++;
+    }
+  } catch (error) {
+    console.warn('Client changes are saved locally and will be retried:', error);
+  } finally {
+    clientSyncRunning = false;
+    updateClientSaveStatus();
+  }
+}
+
+function updateClientSaveStatus() {
+  const status = document.getElementById('clientSaveStatus');
+  const id = document.getElementById('clientId').value;
+  if (!id) return;
+  status.textContent = pendingClientChanges()[id]
+    ? 'Saved on this device. Waiting for cloud sync.'
+    : 'Saved to cloud.';
+}
+
 async function syncTableToSupabase(key, data) {
   if (!supabaseClient) return;
   const tableMap = {
@@ -280,6 +343,7 @@ async function syncTableToSupabase(key, data) {
 }
 
 async function deleteFromSupabase(key, idOrIds) {
+  if (key === 'clients') return; // Client deletes use the persistent queue.
   if (!supabaseClient) return;
   const tableMap = {
     leads: 'leads',
@@ -306,13 +370,17 @@ async function deleteFromSupabase(key, idOrIds) {
 
 async function pullTableFromCloud(tableName) {
   if (!supabaseClient) return;
+  const connection = supabaseClient;
+  const writeVersion = clientWriteVersion;
+  const pullVersion = tableName === 'clients' ? ++clientPullVersion : 0;
   try {
-    let query = supabaseClient.from(tableName).select('*');
+    let query = connection.from(tableName).select('*');
     if (tableName === 'tickets' || tableName === 'leads') {
       query = query.order('created_at', { ascending: false });
     }
     const { data, error } = await query;
-    if (error || !data) return;
+    if (error || !data || connection !== supabaseClient) return;
+    if (tableName === 'clients' && (writeVersion !== clientWriteVersion || pullVersion !== clientPullVersion)) return;
 
     const reverseMap = {
       leads: 'leads',
@@ -325,7 +393,11 @@ async function pullTableFromCloud(tableName) {
     if (!storageKey) return;
 
     const mapped = data.map(r => mapDbToItem(tableName, r));
-    setData(storageKey, mapped, false);
+    if (storageKey === 'clients') {
+      localStorage.setItem(STORAGE_KEYS.clients, JSON.stringify(mapped));
+    } else {
+      setData(storageKey, mapped, false);
+    }
 
     if (storageKey === 'leads') renderLeads();
     else if (storageKey === 'clients') renderClients();
@@ -378,19 +450,23 @@ async function initSupabase(showFeedback = false) {
 
   try {
     updateCloudIndicator('syncing', 'Connecting...');
-    supabaseClient = window.supabase.createClient(url, key);
+    const connection = window.supabase.createClient(url, key);
     
     // Test connection
-    const { error } = await supabaseClient.from('tickets').select('id').limit(1);
+    const { error } = await connection.from('tickets').select('id').limit(1);
     if (error) throw error;
+    if (cloudDisconnected) return false;
+    supabaseClient = connection;
 
     updateCloudIndicator('connected', 'Cloud Connected');
     setupRealtimeSubscriptions();
+    await syncClientChanges();
     await pullAllFromCloud();
 
     if (showFeedback) showToast('Connected to Supabase! Live sync active.');
     return true;
   } catch (err) {
+    supabaseClient = null;
     console.error('Supabase connection failed:', err);
     updateCloudIndicator('error', 'Cloud Error');
     if (showFeedback) showToast('Supabase connection error: ' + (err.message || 'Check URL/Key'), 'error');
@@ -400,10 +476,29 @@ async function initSupabase(showFeedback = false) {
 
 function getData(key) {
   const raw = localStorage.getItem(STORAGE_KEYS[key]);
-  return raw ? JSON.parse(raw) : [];
+  const data = raw ? JSON.parse(raw) : [];
+  return key === 'clients' ? mergeClientChanges(data) : data;
 }
 
 function setData(key, data, syncCloud = true) {
+  if (key === 'clients') {
+    const before = new Map(getData('clients').map(client => [client.id, client]));
+    const changes = pendingClientChanges();
+    for (const client of data) {
+      if (JSON.stringify(before.get(client.id)) !== JSON.stringify(client)) {
+        changes[client.id] = { client, revision: generateId() };
+      }
+      before.delete(client.id);
+    }
+    for (const id of before.keys()) {
+      changes[id] = { client: null, revision: generateId() };
+    }
+    localStorage.setItem(CLIENT_CHANGES_KEY, JSON.stringify(changes));
+    syncToSheets(key, data);
+    window.clearTimeout(clientSyncTimer);
+    clientSyncTimer = window.setTimeout(syncClientChanges, 450);
+    return;
+  }
   localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(data));
   syncToSheets(key, data);
   if (syncCloud && supabaseClient) {
@@ -1036,7 +1131,6 @@ window.deleteClient = function(id) {
   if (!confirm('Are you sure you want to remove this client?')) return;
   const clients = getData('clients').filter(c => c.id !== id);
   setData('clients', clients, false);
-  deleteFromSupabase('clients', id);
   SELECTED_ITEMS.clients.delete(id);
   renderClients();
   showToast('Client removed');
@@ -1069,10 +1163,8 @@ window.promoteClient = function(id) {
     document.getElementById('buildStatus').value = 'Just Started';
     document.getElementById('modalBuildTitle').innerText = 'Start Build from Client';
     
-    clients.splice(cIndex, 1);
-    setData('clients', clients);
-    renderClients();
     openModal('modalBuild');
+    document.getElementById('formBuild').dataset.clientId = id;
   }
 }
 
@@ -1738,35 +1830,70 @@ document.getElementById('formLead').addEventListener('submit', e => {
   showToast(isNew ? 'Lead added' : 'Lead updated');
 });
 
-document.getElementById('formClient').addEventListener('submit', e => {
-  e.preventDefault();
-  const id = document.getElementById('clientId').value;
-  const isNew = !id;
-  const existingClient = !isNew ? getData('clients').find(c => c.id === id) : null;
-  const client = {
-    id: isNew ? generateId() : id,
-    name: document.getElementById('clientName').value.trim(),
-    phone: document.getElementById('clientPhone').value.trim(),
-    email: document.getElementById('clientEmail').value.trim(),
-    address: document.getElementById('clientAddress').value.trim(),
-    status: document.getElementById('clientStatus').value,
-    estValue: document.getElementById('clientEstValue').value.trim(),
-    lastContact: document.getElementById('clientLastContact').value,
-    notes: document.getElementById('clientNotes').value.trim(),
-    addedBy: isNew ? (currentUser?.displayName || currentUser?.id || 'Admin') : (existingClient?.addedBy || 'Admin')
-  };
-  
+const clientForm = document.getElementById('formClient');
+const clientFields = {
+  clientName: 'name',
+  clientPhone: 'phone',
+  clientEmail: 'email',
+  clientAddress: 'address',
+  clientStatus: 'status',
+  clientEstValue: 'estValue',
+  clientLastContact: 'lastContact',
+  clientNotes: 'notes'
+};
+
+clientForm.addEventListener('submit', event => event.preventDefault());
+clientForm.addEventListener('input', event => {
+  const field = clientFields[event.target.id];
+  if (!field) return;
+  const idInput = document.getElementById('clientId');
+  const status = document.getElementById('clientSaveStatus');
   const clients = getData('clients');
-  if(isNew) clients.push(client);
-  else {
-    const idx = clients.findIndex(c => c.id === id);
-    if(idx > -1) clients[idx] = client;
+  const index = clients.findIndex(client => client.id === idInput.value);
+
+  if ((index < 0 || field === 'name') && !document.getElementById('clientName').value.trim()) {
+    status.textContent = 'Enter a name to autosave.';
+    return;
   }
-  setData('clients', clients);
-  closeModal('modalClient');
-  renderClients();
-  showToast(isNew ? 'Client added' : 'Client updated');
+
+  if (idInput.value && index < 0) {
+    status.textContent = 'This client is no longer in the list.';
+    return;
+  }
+
+  let client;
+  if (index < 0) {
+    client = { id: generateId(), addedBy: currentUser?.displayName || 'Admin' };
+    for (const [inputId, key] of Object.entries(clientFields)) {
+      client[key] = document.getElementById(inputId).value.trim();
+    }
+    client.phone = formatPhoneNumber(client.phone);
+    clients.push(client);
+  } else {
+    const value = event.target.value.trim();
+    client = { ...clients[index], [field]: field === 'phone' ? formatPhoneNumber(value) : value };
+    clients[index] = client;
+  }
+
+  try {
+    setData('clients', clients);
+    idInput.value = client.id;
+    updateClientSaveStatus();
+    renderClients();
+  } catch (error) {
+    status.textContent = 'Could not save on this device. Keep this form open and try again.';
+    console.error('Client autosave failed:', error);
+  }
 });
+
+function closeBuildForm(form) {
+  const sourceClientId = form.dataset.clientId;
+  if (sourceClientId) {
+    setData('clients', getData('clients').filter(client => client.id !== sourceClientId));
+    renderClients();
+  }
+  closeModal('modalBuild');
+}
 
 document.getElementById('formBuild').addEventListener('submit', e => {
   e.preventDefault();
@@ -1802,7 +1929,7 @@ document.getElementById('formBuild').addEventListener('submit', e => {
         setData('builds', builds, false);
         deleteFromSupabase('builds', id);
       }
-      closeModal('modalBuild');
+      closeBuildForm(e.currentTarget);
       renderBuilds();
       renderPastBuilds();
       showToast('Build moved to Past Builds');
@@ -1816,7 +1943,7 @@ document.getElementById('formBuild').addEventListener('submit', e => {
     if(idx > -1) builds[idx] = build;
   }
   setData('builds', builds);
-  closeModal('modalBuild');
+  closeBuildForm(e.currentTarget);
   renderBuilds();
   if (isNew) sendNotification('new_build', build);
   showToast(isNew ? 'Build added' : 'Build updated');
@@ -1942,7 +2069,12 @@ function showSection(sectionName) {
 
 function openModal(modalId) {
   if(modalId === 'modalLead' && !document.getElementById('leadId').value) document.getElementById('formLead').reset();
-  if(modalId === 'modalClient' && !document.getElementById('clientId').value) document.getElementById('formClient').reset();
+  if (modalId === 'modalClient') {
+    const status = document.getElementById('clientSaveStatus');
+    status.textContent = 'Changes save automatically.';
+    if (!document.getElementById('clientId').value) document.getElementById('formClient').reset();
+    else if (pendingClientChanges()[document.getElementById('clientId').value]) updateClientSaveStatus();
+  }
   if(modalId === 'modalBuild' && !document.getElementById('buildId').value) document.getElementById('formBuild').reset();
   if(modalId === 'modalPastBuild' && !document.getElementById('pastBuildId').value) document.getElementById('formPastBuild').reset();
   if(modalId === 'modalTicket' && !document.getElementById('ticketId').value) document.getElementById('formTicket').reset();
@@ -1954,6 +2086,7 @@ function openModal(modalId) {
 function closeModal(modalId) {
   document.getElementById(modalId).classList.remove('open');
   const form = document.querySelector(`#${modalId} form`);
+  if (modalId === 'modalBuild') delete form.dataset.clientId;
   if(form) {
     form.reset();
     const hidden = form.querySelector('input[type="hidden"]');
@@ -2198,6 +2331,7 @@ document.getElementById('btnSaveSupabaseConfig')?.addEventListener('click', asyn
     showToast('Please enter both Supabase URL and Key', 'error');
     return;
   }
+  cloudDisconnected = false;
   localStorage.setItem('crm_supabase_url', url);
   localStorage.setItem('crm_supabase_key', key);
   showToast('Connecting to Supabase...');
@@ -2210,6 +2344,7 @@ document.getElementById('btnSaveSupabaseConfig')?.addEventListener('click', asyn
 // Disconnect Supabase
 document.getElementById('btnDisconnectSupabase')?.addEventListener('click', () => {
   if (!confirm('Disconnect from Supabase Cloud? Your local data will remain saved.')) return;
+  cloudDisconnected = true;
   localStorage.removeItem('crm_supabase_url');
   localStorage.removeItem('crm_supabase_key');
   if (supabaseClient && realtimeChannel) {
@@ -2307,3 +2442,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     initApp();
   }
 });
+
+async function retryClientSync() {
+  if (!currentUser || !navigator.onLine || cloudDisconnected || reconnecting) return;
+  if (supabaseClient) {
+    if (Object.keys(pendingClientChanges()).length) await syncClientChanges();
+    return;
+  }
+
+  reconnecting = true;
+  try {
+    await initSupabase();
+  } finally {
+    reconnecting = false;
+  }
+}
+
+window.addEventListener('online', async () => {
+  const wasConnected = Boolean(supabaseClient);
+  await retryClientSync();
+  if (currentUser && wasConnected && supabaseClient) await pullTableFromCloud('clients');
+});
+window.setInterval(retryClientSync, 5000);

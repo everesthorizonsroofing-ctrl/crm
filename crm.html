@@ -390,8 +390,8 @@
           <div class="form-group full-width"><label>Notes</label><textarea id="clientNotes" rows="3"></textarea></div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn-secondary modal-cancel">Cancel</button>
-          <button type="submit" class="btn-primary">Save Client</button>
+          <span id="clientSaveStatus" role="status">Changes save automatically.</span>
+          <button type="button" class="btn-secondary modal-cancel">Done</button>
         </div>
       </form>
     </div>
@@ -655,6 +655,6 @@
   <!-- TOAST CONTAINER -->
   <div id="toastContainer"></div>
 
-  <script src="crm.js"></script>
+  <script src="crm.js?v=client-autosave-1"></script>
 </body>
 </html>
