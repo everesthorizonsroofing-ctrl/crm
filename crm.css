@@ -332,7 +332,7 @@ button:focus-visible {
 .view-toggle button.active { background: #fff; color: var(--text-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
 
 /* Toasts */
-#toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+#toastContainer { pointer-events: none; position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
 .toast { background: #fff; padding: 15px 20px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-left: 4px solid var(--success); min-width: 250px; transform: translateX(120%); transition: transform 0.3s; display: flex; align-items: center; justify-content: space-between; }
 .toast.show { transform: translateX(0); }
 .toast.error { border-left-color: var(--danger); }

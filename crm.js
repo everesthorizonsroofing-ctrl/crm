@@ -483,7 +483,8 @@ function generateId() {
 function getDisplayDate(isoString) {
   if (!isoString) return '';
   const d = new Date(isoString);
-  return d.toLocaleDateString();
+  const options = /^\d{4}-\d{2}-\d{2}$/.test(isoString) ? { timeZone: 'UTC' } : undefined;
+  return d.toLocaleDateString(undefined, options);
 }
 
 function formatPhoneNumber(val) {
@@ -958,12 +959,11 @@ window.promoteClient = function(id) {
   if(cIndex > -1) {
     const c = clients[cIndex];
     document.getElementById('buildId').value = '';
+    openModal('modalBuild');
     document.getElementById('buildClientName').value = c.name;
     document.getElementById('buildAddress').value = c.address;
     document.getElementById('buildStatus').value = 'Just Started';
     document.getElementById('modalBuildTitle').innerText = 'Start Build from Client';
-    
-    openModal('modalBuild');
     document.getElementById('formBuild').dataset.clientId = id;
   }
 }
@@ -1128,7 +1128,7 @@ function formatCSVDate(val) {
   if (!val) return '';
   const d = new Date(val);
   if (isNaN(d.getTime())) return String(val);
-  return d.toLocaleDateString();
+  return getDisplayDate(val);
 }
 
 function downloadCSV(filename, headers, rows) {
@@ -1435,8 +1435,16 @@ window.deleteTicket = function(id) {
 document.getElementById('formLead').addEventListener('submit', e => {
   e.preventDefault();
   const id = document.getElementById('leadId').value;
-  const existingLead = !isNew ? getData('leads').find(l => l.id === id) : null;
+  const isNew = !id;
+  const leads = getData('leads');
+  const index = leads.findIndex(lead => lead.id === id);
+  const existingLead = leads[index];
+  if (!isNew && !existingLead) {
+    showToast('This lead is no longer available.', 'error');
+    return;
+  }
   const lead = {
+    ...existingLead,
     id: isNew ? generateId() : id,
     name: document.getElementById('leadName').value.trim(),
     phone: document.getElementById('leadPhone').value.trim(),
@@ -1447,15 +1455,11 @@ document.getElementById('formLead').addEventListener('submit', e => {
     notes: document.getElementById('leadNotes').value.trim(),
     dateAdded: isNew ? new Date().toISOString() : (existingLead?.dateAdded || new Date().toISOString()),
     addedBy: isNew ? (currentUser?.displayName || currentUser?.id || 'Admin') : (existingLead?.addedBy || 'Admin'),
-    archived: false
+    archived: existingLead?.archived ?? false
   };
-  
-  const leads = getData('leads');
-  if(isNew) leads.unshift(lead);
-  else {
-    const idx = leads.findIndex(l => l.id === id);
-    if(idx > -1) leads[idx] = lead;
-  }
+
+  if (isNew) leads.unshift(lead);
+  else leads[index] = lead;
   setData('leads', leads);
   closeModal('modalLead');
   renderLeads();
